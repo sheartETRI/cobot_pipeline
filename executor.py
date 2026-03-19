@@ -1,11 +1,12 @@
 # executor.py (updated)
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from copy import deepcopy
 from typing import Any, Dict, List, Tuple, Optional
 
-from world_model import WorldModel
+from world_model import BoxGeometry, CylinderGeometry, ObjectModel, PlaneGeometry, WorldModel
 
 from ir_models import (
     ActionStep,
@@ -20,12 +21,22 @@ from ir_models import (
     VerificationSummary,
 )
 
+
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class MockWorldState:
     bound_objects: set[str] = field(default_factory=set)
     known_features: set[str] = field(default_factory=set)
     attached_object: str | None = None
     achieved_effects: set[str] = field(default_factory=set)
+
+
+@dataclass
+class AABB:
+    center: Tuple[float, float, float]
+    half_extents: Tuple[float, float, float]
 
 
 class MockSimulator:
@@ -36,6 +47,7 @@ class MockSimulator:
     """
 
     def __init__(self, ir: GenericCobotIR, world_model: WorldModel | None = None) -> None:
+        self.world_model = world_model
         known_features = set(ir.world_binding.features.keys())
         bound_objects: set[str] = set()
         attached_object: Optional[str] = None
@@ -47,20 +59,12 @@ class MockSimulator:
             # bound objects: include world objects
             bound_objects.update(world_model.objects.keys())
 
-            # Try to resolve IR world_binding.objects (registry id) -> world object id
-            # Strategy: for each IR object value (registry base), check world.frames.registry_path
-            # and attempt to infer object id from a frame name (heuristic: <object_id>_frame)
+            # Explicit registry_id mapping between IR object bindings and world objects.
             for alias, registry_id in ir.world_binding.objects.items():
-                registry_base = registry_id.split("/")[0]
-                for frame_id, frame in world_model.frames.items():
-                    if frame.registry_path.startswith(registry_base):
-                        # heuristic: if frame_id endswith "_frame", remove suffix to get object id
-                        candidate = frame_id
-                        if candidate.endswith("_frame"):
-                            candidate = candidate[: -len("_frame")]
-                        if candidate in world_model.objects:
-                            bound_objects.add(candidate)
-                            break
+                matched = world_model.find_object_by_registry_id(registry_id)
+                if matched is not None and matched.object_id == alias:
+                    bound_objects.add(alias)
+                    logger.debug("Bound world object by registry_id: alias=%s registry_id=%s", alias, registry_id)
             # attached object
             attached_object = world_model.robot_state.attached_object
 
@@ -70,6 +74,220 @@ class MockSimulator:
             attached_object=attached_object,
         )
         self.simulator_name = "mock_sim"
+        logger.debug(
+            "Initialized MockSimulator with bound_objects=%s known_features=%s attached_object=%s",
+            sorted(bound_objects),
+            sorted(known_features),
+            attached_object,
+        )
+
+    def _geometry_half_extents(self, obj: ObjectModel) -> Tuple[float, float, float]:
+        geometry = obj.geometry
+        if isinstance(geometry, BoxGeometry):
+            return (
+                geometry.size[0] / 2.0,
+                geometry.size[1] / 2.0,
+                geometry.size[2] / 2.0,
+            )
+        if isinstance(geometry, CylinderGeometry):
+            return (
+                geometry.radius,
+                geometry.radius,
+                geometry.height / 2.0,
+            )
+        if isinstance(geometry, PlaneGeometry):
+            return (
+                geometry.size[0] / 2.0,
+                geometry.size[1] / 2.0,
+                0.001,
+            )
+        return (0.01, 0.01, 0.01)
+
+    def _vector_add(
+        self,
+        lhs: Tuple[float, float, float],
+        rhs: Tuple[float, float, float],
+    ) -> Tuple[float, float, float]:
+        return (lhs[0] + rhs[0], lhs[1] + rhs[1], lhs[2] + rhs[2])
+
+    def _resolve_object_center(self, object_id: str) -> Optional[Tuple[float, float, float]]:
+        if self.world_model is None or not self.world_model.has_object(object_id):
+            return None
+        pose = self.world_model.get_object(object_id).pose
+        return self._resolve_pose_center(pose.frame, tuple(pose.position))
+
+    def _resolve_feature_center(self, feature_id: str) -> Optional[Tuple[float, float, float]]:
+        if self.world_model is None or not self.world_model.has_feature(feature_id):
+            return None
+        feature = self.world_model.get_feature(feature_id)
+        parent_center = self._resolve_object_center(feature.parent_object)
+        if parent_center is None:
+            return None
+        return self._vector_add(parent_center, tuple(feature.local_pose.position))
+
+    def _resolve_frame_center(self, frame_id: str) -> Optional[Tuple[float, float, float]]:
+        if self.world_model is None or not self.world_model.has_frame(frame_id):
+            return None
+        frame = self.world_model.get_frame(frame_id)
+        return self._resolve_pose_center(frame.pose.frame, tuple(frame.pose.position))
+
+    def _resolve_pose_center(
+        self,
+        ref_name: str,
+        offset: Tuple[float, float, float],
+    ) -> Optional[Tuple[float, float, float]]:
+        if self.world_model is None:
+            return None
+        if ref_name == self.world_model.world_frame:
+            return offset
+        if self.world_model.has_object(ref_name):
+            base = self._resolve_object_center(ref_name)
+            return self._vector_add(base, offset) if base is not None else None
+        if self.world_model.has_feature(ref_name):
+            base = self._resolve_feature_center(ref_name)
+            return self._vector_add(base, offset) if base is not None else None
+        if self.world_model.has_frame(ref_name):
+            base = self._resolve_frame_center(ref_name)
+            return self._vector_add(base, offset) if base is not None else None
+
+        for frame in self.world_model.frames.values():
+            if frame.registry_path == ref_name:
+                base = self._resolve_frame_center(frame.frame_id)
+                return self._vector_add(base, offset) if base is not None else None
+        return None
+
+    def _resolve_pose_ref_center(self, pose_ref: Any) -> Optional[Tuple[float, float, float]]:
+        offset = tuple(getattr(pose_ref, "offset", [0.0, 0.0, 0.0]))
+        return self._resolve_pose_center(pose_ref.ref, offset)
+
+    def _infer_object_owner_for_ref(self, ref_name: str) -> Optional[str]:
+        if self.world_model is None:
+            return None
+        if self.world_model.has_object(ref_name):
+            return ref_name
+        if self.world_model.has_feature(ref_name):
+            return self.world_model.get_feature(ref_name).parent_object
+        if self.world_model.has_frame(ref_name):
+            registry_path = self.world_model.get_frame(ref_name).registry_path
+            registry_base = registry_path.split("/")[0]
+            matched = self.world_model.find_object_by_registry_id(registry_base)
+            return matched.object_id if matched is not None else None
+        for frame in self.world_model.frames.values():
+            if frame.registry_path == ref_name:
+                registry_base = frame.registry_path.split("/")[0]
+                matched = self.world_model.find_object_by_registry_id(registry_base)
+                return matched.object_id if matched is not None else None
+        return None
+
+    def _object_aabb(self, object_id: str) -> Optional[AABB]:
+        if self.world_model is None or not self.world_model.has_object(object_id):
+            return None
+        obj = self.world_model.get_object(object_id)
+        center = self._resolve_object_center(object_id)
+        if center is None:
+            return None
+        return AABB(center=center, half_extents=self._geometry_half_extents(obj))
+
+    def _aabb_overlaps(self, lhs: AABB, rhs: AABB, clearance: float = 0.0) -> bool:
+        for i in range(3):
+            if abs(lhs.center[i] - rhs.center[i]) > (lhs.half_extents[i] + rhs.half_extents[i] + clearance):
+                return False
+        return True
+
+    def _check_pose_collision(
+        self,
+        center: Optional[Tuple[float, float, float]],
+        half_extents: Tuple[float, float, float],
+        excluded_objects: set[str],
+        clearance: float = 0.0,
+    ) -> Dict[str, Any] | None:
+        if self.world_model is None or center is None:
+            return None
+
+        probe = AABB(center=center, half_extents=half_extents)
+        logger.debug(
+            "Checking pose collision: center=%s half_extents=%s excluded=%s clearance=%.4f",
+            center,
+            half_extents,
+            sorted(excluded_objects),
+            clearance,
+        )
+        for object_id, obj in self.world_model.objects.items():
+            if not obj.collision_enabled or object_id in excluded_objects:
+                continue
+            obstacle = self._object_aabb(object_id)
+            if obstacle is None:
+                continue
+            if self._aabb_overlaps(probe, obstacle, clearance=clearance):
+                logger.debug(
+                    "AABB collision detected with object=%s probe=%s obstacle=%s",
+                    object_id,
+                    probe,
+                    obstacle,
+                )
+                return {
+                    "error_id": "e_geometry_collision",
+                    "type": "collision",
+                    "message": f"predicted AABB collision with object '{object_id}'",
+                    "entities": ["gripper_tcp", object_id],
+                    "suggested_repairs": [
+                        "increase_clearance",
+                        "replan_path",
+                        "adjust_target_pose",
+                    ],
+                }
+        return None
+
+    def _check_insert_geometry_collision(self, step_inputs: Any) -> Dict[str, Any] | None:
+        if self.world_model is None:
+            return None
+        if not self.world_model.has_object(step_inputs.source_object):
+            return None
+        if not step_inputs.target_feature or not self.world_model.has_feature(step_inputs.target_feature):
+            return None
+
+        source_object = self.world_model.get_object(step_inputs.source_object)
+        target_feature = self.world_model.get_feature(step_inputs.target_feature)
+        source_extents = self._geometry_half_extents(source_object)
+        source_diameter = max(source_extents[0], source_extents[1]) * 2.0
+        feature_width = target_feature.width
+        feature_depth = target_feature.depth
+        logger.debug(
+            "Checking insert geometry: source=%s diameter=%.4f target_feature=%s width=%s depth=%s insert_depth=%.4f",
+            step_inputs.source_object,
+            source_diameter,
+            step_inputs.target_feature,
+            feature_width,
+            feature_depth,
+            step_inputs.insert_depth,
+        )
+
+        if feature_width is not None and source_diameter > feature_width:
+            return {
+                "error_id": "e_insert_geometry_collision",
+                "type": "collision",
+                "message": "source object cross-section is larger than target feature width",
+                "entities": [step_inputs.source_object, step_inputs.target_feature],
+                "suggested_repairs": [
+                    "choose_smaller_object",
+                    "choose_larger_target_feature",
+                    "refine_world_geometry",
+                ],
+            }
+
+        if feature_depth is not None and step_inputs.insert_depth > feature_depth:
+            return {
+                "error_id": "e_insert_geometry_collision",
+                "type": "collision",
+                "message": "insert depth exceeds target feature depth",
+                "entities": [step_inputs.source_object, step_inputs.target_feature],
+                "suggested_repairs": [
+                    "reduce_insert_depth",
+                    "choose_deeper_target_feature",
+                    "refine_world_geometry",
+                ],
+            }
+        return None
 
     def snapshot_state(self) -> Dict[str, Any]:
         return {
@@ -84,11 +302,19 @@ class MockSimulator:
         parsed_constraints = step.parsed_constraints()
 
         step_type = step.type
+        logger.debug(
+            "Executing step step_id=%s type=%s inputs=%s constraints=%s",
+            step.step_id,
+            step_type.value,
+            step.inputs,
+            step.constraints,
+        )
 
         if step_type == PrimitiveType.FIND_OBJECT:
             obj_name = parsed_inputs.object
             self.world.bound_objects.add(obj_name)
             self.world.achieved_effects.add(f"object_pose_bound:{obj_name}")
+            logger.debug("find_object succeeded for %s", obj_name)
             return True, None
 
         if step_type == PrimitiveType.APPROACH:
@@ -109,12 +335,27 @@ class MockSimulator:
                     "entities": [parsed_inputs.target_feature],
                     "suggested_repairs": ["declare_feature_in_world_binding"],
                 }
+            approach_center = self._resolve_pose_ref_center(parsed_inputs.approach_pose)
+            excluded = {target}
+            owner = self._infer_object_owner_for_ref(parsed_inputs.approach_pose.ref)
+            if owner is not None:
+                excluded.add(owner)
+            collision = self._check_pose_collision(
+                center=approach_center,
+                half_extents=(0.01, 0.01, 0.02),
+                excluded_objects=excluded,
+                clearance=getattr(parsed_constraints, "min_clearance", 0.0),
+            )
+            if collision is not None:
+                logger.debug("approach failed due to predicted collision: %s", collision)
+                return False, collision
             if parsed_inputs.target_feature:
                 self.world.achieved_effects.add(
                     f"tcp_at_pregrasp_pose:{parsed_inputs.target_feature}"
                 )
             else:
                 self.world.achieved_effects.add("tcp_at_pregrasp_pose")
+            logger.debug("approach succeeded for target=%s", target)
             return True, None
 
         if step_type == PrimitiveType.GRASP:
@@ -133,12 +374,29 @@ class MockSimulator:
                 self.world.achieved_effects.add(
                     f"grasp_target_feature:{target}:{parsed_inputs.target_feature}"
                 )
+            logger.debug("grasp succeeded for target=%s", target)
             return True, None
 
         if step_type == PrimitiveType.RETREAT:
             return True, None
 
         if step_type == PrimitiveType.MOVE_LINEAR:
+            target_center = self._resolve_pose_ref_center(parsed_inputs.target_pose)
+            clearance = 0.005 if getattr(parsed_constraints, "collision_avoidance", False) else 0.0
+            owner = self._infer_object_owner_for_ref(parsed_inputs.target_pose.ref)
+            excluded = {self.world.attached_object} if self.world.attached_object else set()
+            if owner is not None:
+                excluded.add(owner)
+            collision = self._check_pose_collision(
+                center=target_center,
+                half_extents=(0.01, 0.01, 0.02),
+                excluded_objects=excluded,
+                clearance=clearance,
+            )
+            if collision is not None:
+                logger.debug("move_linear failed due to predicted collision: %s", collision)
+                return False, collision
+            logger.debug("move_linear succeeded to ref=%s", parsed_inputs.target_pose.ref)
             return True, None
 
         if step_type == PrimitiveType.PLACE:
@@ -151,12 +409,29 @@ class MockSimulator:
                     "entities": [target],
                     "suggested_repairs": ["add_grasp_step", "check_grasp_success"],
                 }
+            target_center = self._resolve_pose_ref_center(parsed_inputs.destination_pose)
+            owner = self._infer_object_owner_for_ref(parsed_inputs.destination_pose.ref)
+            excluded = {target}
+            if owner is not None:
+                excluded.add(owner)
+            target_aabb = self._object_aabb(target)
+            half_extents = target_aabb.half_extents if target_aabb is not None else (0.02, 0.02, 0.02)
+            collision = self._check_pose_collision(
+                center=target_center,
+                half_extents=half_extents,
+                excluded_objects=excluded,
+                clearance=getattr(parsed_constraints, "placement_tolerance", 0.0),
+            )
+            if collision is not None:
+                logger.debug("place failed due to predicted collision: %s", collision)
+                return False, collision
             effect_suffix = (
                 f"{target}:{parsed_inputs.target_feature}"
                 if parsed_inputs.target_feature
                 else target
             )
             self.world.achieved_effects.add(f"object_at_destination:{effect_suffix}")
+            logger.debug("place succeeded for target=%s effect=%s", target, effect_suffix)
             return True, None
 
         if step_type == PrimitiveType.ALIGN:
@@ -173,11 +448,17 @@ class MockSimulator:
             self.world.achieved_effects.add(
                 f"objects_aligned:{source_suffix}:{target_suffix}"
             )
+            logger.debug("align succeeded source=%s target=%s", source_suffix, target_suffix)
             return True, None
 
         if step_type == PrimitiveType.INSERT:
             speed = getattr(parsed_constraints, "speed", 0.03)
             max_force = getattr(parsed_constraints, "max_force", None)
+
+            geometry_collision = self._check_insert_geometry_collision(parsed_inputs)
+            if geometry_collision is not None:
+                logger.debug("insert failed due to geometry collision: %s", geometry_collision)
+                return False, geometry_collision
 
             if speed > 0.03 or (max_force is not None and max_force > 15):
                 collision_entity = (
@@ -205,6 +486,7 @@ class MockSimulator:
             self.world.achieved_effects.add(
                 f"{parsed_inputs.source_object}_inserted_into_{target_suffix}"
             )
+            logger.debug("insert succeeded source=%s target=%s", parsed_inputs.source_object, target_suffix)
             return True, None
 
         if step_type == PrimitiveType.RELEASE:
@@ -213,6 +495,7 @@ class MockSimulator:
                 self.world.attached_object = None
             self.world.achieved_effects.add("release_completed")
             self.world.achieved_effects.add(f"object_detached:{target}")
+            logger.debug("release succeeded for target=%s", target)
             return True, None
 
         if step_type == PrimitiveType.WAIT:
@@ -230,6 +513,7 @@ class MockSimulator:
                     "entities": [condition],
                     "suggested_repairs": ["replan_previous_step"],
                 }
+            logger.debug("check succeeded for condition=%s", condition)
             return True, None
 
         if step_type == PrimitiveType.MOVE_JOINT:
@@ -299,6 +583,7 @@ def validate_step_refs(ir: GenericCobotIR, step: ActionStep, world_model: WorldM
         #  - ref equals one of IR frame registry values (like "obj_xxx/frame")
         #  - ref equals or matches start of a world frame registry_path
         if ref not in known_frames and ref not in world_frame_registry_paths and ref not in ir_frame_registry_values:
+            logger.debug("Step %s has unknown frame reference: %s", step.step_id, ref)
             return False, {
                 "error_id": "e_unknown_frame_ref",
                 "type": "binding_error",
@@ -309,6 +594,7 @@ def validate_step_refs(ir: GenericCobotIR, step: ActionStep, world_model: WorldM
 
     for feature in step_input_feature_candidates(step):
         if feature not in known_features:
+            logger.debug("Step %s has unknown feature reference: %s", step.step_id, feature)
             return False, {
                 "error_id": "e_unknown_feature_ref",
                 "type": "binding_error",
@@ -337,6 +623,7 @@ def run_ir(ir: GenericCobotIR, world_model: WorldModel | None = None) -> Verific
 
     for step in ir.action_plan:
         before_state = sim.snapshot_state()
+        logger.debug("Step %s before_state=%s", step.step_id, before_state)
         ok_ref, ref_err = validate_step_refs(ir, step, world_model=world_model)
         if not ok_ref:
             step.status = StepStatus.FAILED
@@ -381,6 +668,7 @@ def run_ir(ir: GenericCobotIR, world_model: WorldModel | None = None) -> Verific
 
         ok, err = sim.execute_step(step)
         after_state = sim.snapshot_state()
+        logger.debug("Step %s after_state=%s success=%s error=%s", step.step_id, after_state, ok, err)
         traces.append(
             StepTrace(
                 step_id=step.step_id,
@@ -430,6 +718,7 @@ def run_ir(ir: GenericCobotIR, world_model: WorldModel | None = None) -> Verific
         executed += 1
 
     goal_reached = check_goal_reached(ir, sim)
+    logger.debug("Execution completed task_id=%s steps=%d goal_reached=%s", ir.task_id, executed, goal_reached)
 
     return VerificationResult(
         task_id=ir.task_id,

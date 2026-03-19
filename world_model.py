@@ -203,6 +203,25 @@ class WorldModel(BaseModel):
                 )
         return frames
 
+    @field_validator("objects")
+    @classmethod
+    def validate_object_registry_ids(cls, objects: Dict[str, ObjectModel]):
+        seen_registry_ids: set[str] = set()
+        for object_id, obj in objects.items():
+            registry_id = obj.metadata.get("registry_id")
+            if registry_id is None:
+                continue
+            if not registry_id:
+                raise ValueError(
+                    f"object '{object_id}' has empty metadata.registry_id"
+                )
+            if registry_id in seen_registry_ids:
+                raise ValueError(
+                    f"duplicate metadata.registry_id '{registry_id}' found in world.objects"
+                )
+            seen_registry_ids.add(registry_id)
+        return objects
+
     def get_object(self, object_id: str) -> ObjectModel:
         if object_id not in self.objects:
             raise KeyError(f"unknown object: {object_id}")
@@ -215,6 +234,15 @@ class WorldModel(BaseModel):
 
     def has_object(self, object_id: str) -> bool:
         return object_id in self.objects
+
+    def get_object_registry_id(self, object_id: str) -> str | None:
+        return self.get_object(object_id).metadata.get("registry_id")
+
+    def find_object_by_registry_id(self, registry_id: str) -> ObjectModel | None:
+        for obj in self.objects.values():
+            if obj.metadata.get("registry_id") == registry_id:
+                return obj
+        return None
 
     def has_feature(self, feature_id: str) -> bool:
         return feature_id in self.features

@@ -17,7 +17,8 @@
       "graspable": true,
       "collision_enabled": true,
       "metadata": {
-        "color": "red"
+        "color": "red",
+        "registry_id": "obj_block_red_01"
       }
     },
     "target_zone": {
@@ -36,7 +37,8 @@
       "graspable": false,
       "collision_enabled": true,
       "metadata": {
-        "role": "placement_fixture"
+        "role": "placement_fixture",
+        "registry_id": "obj_target_zone_01"
       }
     }
   },

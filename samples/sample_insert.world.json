@@ -18,7 +18,8 @@
       "graspable": true,
       "collision_enabled": true,
       "metadata": {
-        "role": "insert_part"
+        "role": "insert_part",
+        "registry_id": "obj_pin_01"
       }
     },
     "hole_block": {
@@ -37,7 +38,8 @@
       "graspable": false,
       "collision_enabled": true,
       "metadata": {
-        "role": "insert_target_fixture"
+        "role": "insert_target_fixture",
+        "registry_id": "obj_hole_block_01"
       }
     }
   },
