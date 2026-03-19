@@ -1,0 +1,2162 @@
+﻿================================================================================
+[LOAD] samples/sample_pick_place.json
+task_id=task_pick_place_001
+goal=pick_and_place
+steps=8
+[SUMMARY]
+sample=samples/sample_pick_place.json
+task=task_pick_place_001 | goal=pick_and_place | status=PASSED
+execution=8/8 steps | goal_reached=YES | collision=NO
+metrics=min_clearance:0.0100 m | max_joint_velocity_ratio:0.40 | est_time:8.0 s
+steps:
+  - s1 find_object: OK
+  - s2 approach: OK
+  - s3 grasp: OK
+  - s4 retreat: OK
+  - s5 move_linear: OK
+  - s6 place: OK
+  - s7 release: OK
+  - s8 retreat: OK
+[RESULT]
+{
+  "task_id": "task_pick_place_001",
+  "simulator": "mock_sim",
+  "status": "passed",
+  "summary": {
+    "steps_total": 8,
+    "steps_executed": 8,
+    "goal_reached": true,
+    "collision_detected": false
+  },
+  "errors": [],
+  "metrics": {
+    "min_clearance": 0.01,
+    "max_joint_velocity_ratio": 0.4,
+    "estimated_execution_time_sec": 8.0
+  },
+  "traces": [
+    {
+      "step_id": "s1",
+      "step_type": "find_object",
+      "before_state": {
+        "bound_objects": [],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": []
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s2",
+      "step_type": "approach",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s3",
+      "step_type": "grasp",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s4",
+      "step_type": "retreat",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s5",
+      "step_type": "move_linear",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s6",
+      "step_type": "place",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s7",
+      "step_type": "release",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_surface",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s8",
+      "step_type": "retreat",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_surface",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_surface",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    }
+  ]
+}
+================================================================================
+[LOAD] samples/sample_pick_place_target_surface.json
+task_id=task_pick_place_target_surface_001
+goal=pick_and_place
+steps=8
+[SUMMARY]
+sample=samples/sample_pick_place_target_surface.json
+task=task_pick_place_target_surface_001 | goal=pick_and_place | status=PASSED
+execution=8/8 steps | goal_reached=YES | collision=NO
+metrics=min_clearance:0.0100 m | max_joint_velocity_ratio:0.40 | est_time:8.0 s
+steps:
+  - s1 find_object: OK
+  - s2 approach: OK
+  - s3 grasp: OK
+  - s4 retreat: OK
+  - s5 move_linear: OK
+  - s6 place: OK
+  - s7 release: OK
+  - s8 retreat: OK
+[RESULT]
+{
+  "task_id": "task_pick_place_target_surface_001",
+  "simulator": "mock_sim",
+  "status": "passed",
+  "summary": {
+    "steps_total": 8,
+    "steps_executed": 8,
+    "goal_reached": true,
+    "collision_detected": false
+  },
+  "errors": [],
+  "metrics": {
+    "min_clearance": 0.01,
+    "max_joint_velocity_ratio": 0.4,
+    "estimated_execution_time_sec": 8.0
+  },
+  "traces": [
+    {
+      "step_id": "s1",
+      "step_type": "find_object",
+      "before_state": {
+        "bound_objects": [],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": []
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s2",
+      "step_type": "approach",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s3",
+      "step_type": "grasp",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s4",
+      "step_type": "retreat",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s5",
+      "step_type": "move_linear",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s6",
+      "step_type": "place",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s7",
+      "step_type": "release",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_surface",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s8",
+      "step_type": "retreat",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_surface",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_surface",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    }
+  ]
+}
+================================================================================
+[LOAD] samples/sample_pick_place_target_slot.json
+task_id=task_pick_place_target_slot_001
+goal=pick_and_place
+steps=8
+[SUMMARY]
+sample=samples/sample_pick_place_target_slot.json
+task=task_pick_place_target_slot_001 | goal=pick_and_place | status=PASSED
+execution=8/8 steps | goal_reached=YES | collision=NO
+metrics=min_clearance:0.0100 m | max_joint_velocity_ratio:0.40 | est_time:8.0 s
+steps:
+  - s1 find_object: OK
+  - s2 approach: OK
+  - s3 grasp: OK
+  - s4 retreat: OK
+  - s5 move_linear: OK
+  - s6 place: OK
+  - s7 release: OK
+  - s8 retreat: OK
+[RESULT]
+{
+  "task_id": "task_pick_place_target_slot_001",
+  "simulator": "mock_sim",
+  "status": "passed",
+  "summary": {
+    "steps_total": 8,
+    "steps_executed": 8,
+    "goal_reached": true,
+    "collision_detected": false
+  },
+  "errors": [],
+  "metrics": {
+    "min_clearance": 0.01,
+    "max_joint_velocity_ratio": 0.4,
+    "estimated_execution_time_sec": 8.0
+  },
+  "traces": [
+    {
+      "step_id": "s1",
+      "step_type": "find_object",
+      "before_state": {
+        "bound_objects": [],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": []
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s2",
+      "step_type": "approach",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s3",
+      "step_type": "grasp",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s4",
+      "step_type": "retreat",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s5",
+      "step_type": "move_linear",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s6",
+      "step_type": "place",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_slot",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s7",
+      "step_type": "release",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_slot",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_slot",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s8",
+      "step_type": "retreat",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_slot",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:target_slot",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    }
+  ]
+}
+================================================================================
+[LOAD] samples/sample_pick_place_fixture_pocket.json
+task_id=task_pick_place_fixture_pocket_001
+goal=pick_and_place
+steps=8
+[SUMMARY]
+sample=samples/sample_pick_place_fixture_pocket.json
+task=task_pick_place_fixture_pocket_001 | goal=pick_and_place | status=PASSED
+execution=8/8 steps | goal_reached=YES | collision=NO
+metrics=min_clearance:0.0100 m | max_joint_velocity_ratio:0.40 | est_time:8.0 s
+steps:
+  - s1 find_object: OK
+  - s2 approach: OK
+  - s3 grasp: OK
+  - s4 retreat: OK
+  - s5 move_linear: OK
+  - s6 place: OK
+  - s7 release: OK
+  - s8 retreat: OK
+[RESULT]
+{
+  "task_id": "task_pick_place_fixture_pocket_001",
+  "simulator": "mock_sim",
+  "status": "passed",
+  "summary": {
+    "steps_total": 8,
+    "steps_executed": 8,
+    "goal_reached": true,
+    "collision_detected": false
+  },
+  "errors": [],
+  "metrics": {
+    "min_clearance": 0.01,
+    "max_joint_velocity_ratio": 0.4,
+    "estimated_execution_time_sec": 8.0
+  },
+  "traces": [
+    {
+      "step_id": "s1",
+      "step_type": "find_object",
+      "before_state": {
+        "bound_objects": [],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": []
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s2",
+      "step_type": "approach",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s3",
+      "step_type": "grasp",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s4",
+      "step_type": "retreat",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s5",
+      "step_type": "move_linear",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s6",
+      "step_type": "place",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:fixture_pocket",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s7",
+      "step_type": "release",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": "block_red",
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:fixture_pocket",
+          "object_attached:block_red",
+          "object_pose_bound:block_red",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:fixture_pocket",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s8",
+      "step_type": "retreat",
+      "before_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:fixture_pocket",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "block_red"
+        ],
+        "known_features": [
+          "block_red_top_surface",
+          "fixture_pocket",
+          "target_slot",
+          "target_surface"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "grasp_target_feature:block_red:block_red_top_surface",
+          "object_at_destination:block_red:fixture_pocket",
+          "object_attached:block_red",
+          "object_detached:block_red",
+          "object_pose_bound:block_red",
+          "release_completed",
+          "tcp_at_pregrasp_pose:block_red_top_surface"
+        ]
+      },
+      "success": true
+    }
+  ]
+}
+================================================================================
+[LOAD] samples/sample_insert.json
+task_id=task_insert_001
+goal=assemble
+steps=10
+[SUMMARY]
+sample=samples/sample_insert.json
+task=task_insert_001 | goal=assemble | status=PASSED
+execution=10/10 steps | goal_reached=YES | collision=NO
+metrics=min_clearance:0.0100 m | max_joint_velocity_ratio:0.40 | est_time:10.0 s
+steps:
+  - s1 find_object: OK
+  - s2 find_object: OK
+  - s3 approach: OK
+  - s4 grasp: OK
+  - s5 retreat: OK
+  - s6 move_linear: OK
+  - s7 align: OK
+  - s8 insert: OK
+  - s9 release: OK
+  - s10 retreat: OK
+[RESULT]
+{
+  "task_id": "task_insert_001",
+  "simulator": "mock_sim",
+  "status": "passed",
+  "summary": {
+    "steps_total": 10,
+    "steps_executed": 10,
+    "goal_reached": true,
+    "collision_detected": false
+  },
+  "errors": [],
+  "metrics": {
+    "min_clearance": 0.01,
+    "max_joint_velocity_ratio": 0.4,
+    "estimated_execution_time_sec": 10.0
+  },
+  "traces": [
+    {
+      "step_id": "s1",
+      "step_type": "find_object",
+      "before_state": {
+        "bound_objects": [],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": []
+      },
+      "after_state": {
+        "bound_objects": [
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:pin"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s2",
+      "step_type": "find_object",
+      "before_state": {
+        "bound_objects": [
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:pin"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s3",
+      "step_type": "approach",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s4",
+      "step_type": "grasp",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s5",
+      "step_type": "retreat",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s6",
+      "step_type": "move_linear",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s7",
+      "step_type": "align",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "objects_aligned:pin:hole",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s8",
+      "step_type": "insert",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "objects_aligned:pin:hole",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "objects_aligned:pin:hole",
+          "pin_inserted_into_hole",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s9",
+      "step_type": "release",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "objects_aligned:pin:hole",
+          "pin_inserted_into_hole",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_detached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "objects_aligned:pin:hole",
+          "pin_inserted_into_hole",
+          "release_completed",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s10",
+      "step_type": "retreat",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_detached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "objects_aligned:pin:hole",
+          "pin_inserted_into_hole",
+          "release_completed",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_detached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "objects_aligned:pin:hole",
+          "pin_inserted_into_hole",
+          "release_completed",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    }
+  ]
+}
+================================================================================
+[LOAD] samples/sample_insert_failure_ir.json
+task_id=task_insert_fail_001
+goal=assemble
+steps=7
+[SUMMARY]
+sample=samples/sample_insert_failure_ir.json
+task=task_insert_fail_001 | goal=assemble | status=FAILED
+execution=7/7 steps | goal_reached=NO | collision=YES
+metrics=min_clearance:0.0015 m | max_joint_velocity_ratio:0.58 | est_time:7.0 s
+errors:
+  - s7 [collision] collision during insertion due to aggressive insertion parameters
+steps:
+  - s1 find_object: OK
+  - s2 find_object: OK
+  - s3 approach: OK
+  - s4 grasp: OK
+  - s5 move_linear: OK
+  - s6 align: OK
+  - s7 insert: FAIL | collision: collision during insertion due to aggressive insertion parameters
+[RESULT]
+{
+  "task_id": "task_insert_fail_001",
+  "simulator": "mock_sim",
+  "status": "failed",
+  "summary": {
+    "steps_total": 7,
+    "steps_executed": 7,
+    "goal_reached": false,
+    "collision_detected": true
+  },
+  "errors": [
+    {
+      "error_id": "e_insert_collision",
+      "step_id": "s7",
+      "type": "collision",
+      "severity": "high",
+      "message": "collision during insertion due to aggressive insertion parameters",
+      "entities": [
+        "gripper_tcp",
+        "hole"
+      ],
+      "suggested_repairs": [
+        "increase_preinsert_height",
+        "reduce_insert_speed",
+        "tighten_alignment_tolerance"
+      ]
+    }
+  ],
+  "metrics": {
+    "min_clearance": 0.0015,
+    "max_joint_velocity_ratio": 0.58,
+    "estimated_execution_time_sec": 7.0
+  },
+  "traces": [
+    {
+      "step_id": "s1",
+      "step_type": "find_object",
+      "before_state": {
+        "bound_objects": [],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": []
+      },
+      "after_state": {
+        "bound_objects": [
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:pin"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s2",
+      "step_type": "find_object",
+      "before_state": {
+        "bound_objects": [
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:pin"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s3",
+      "step_type": "approach",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s4",
+      "step_type": "grasp",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": null,
+        "achieved_effects": [
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s5",
+      "step_type": "move_linear",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s6",
+      "step_type": "align",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "objects_aligned:pin:hole",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": true
+    },
+    {
+      "step_id": "s7",
+      "step_type": "insert",
+      "before_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "objects_aligned:pin:hole",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "after_state": {
+        "bound_objects": [
+          "hole_block",
+          "pin"
+        ],
+        "known_features": [
+          "hole"
+        ],
+        "attached_object": "pin",
+        "achieved_effects": [
+          "object_attached:pin",
+          "object_pose_bound:hole_block",
+          "object_pose_bound:pin",
+          "objects_aligned:pin:hole",
+          "tcp_at_pregrasp_pose:hole"
+        ]
+      },
+      "success": false,
+      "error": {
+        "error_id": "e_insert_collision",
+        "type": "collision",
+        "message": "collision during insertion due to aggressive insertion parameters",
+        "entities": [
+          "gripper_tcp",
+          "hole"
+        ],
+        "suggested_repairs": [
+          "increase_preinsert_height",
+          "reduce_insert_speed",
+          "tighten_alignment_tolerance"
+        ]
+      }
+    }
+  ]
+}

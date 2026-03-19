@@ -1,0 +1,36 @@
+{
+  "based_on_error": "e1",
+  "patches": [
+    {
+      "target_step_id": "s5",
+      "op": "replace",
+      "path": "inputs.target_pose.offset",
+      "value": [0.0, 0.0, 0.03]
+    },
+    {
+      "target_step_id": "s6",
+      "op": "replace",
+      "path": "constraints.angular_tolerance_deg",
+      "value": 2.0
+    },
+    {
+      "target_step_id": "s6",
+      "op": "replace",
+      "path": "constraints.position_tolerance_m",
+      "value": 0.002
+    },
+    {
+      "target_step_id": "s7",
+      "op": "replace",
+      "path": "constraints.speed",
+      "value": 0.02
+    },
+    {
+      "target_step_id": "s7",
+      "op": "replace",
+      "path": "constraints.max_force",
+      "value": 12.0
+    }
+  ],
+  "reason": "increase pre-insert clearance, tighten alignment tolerance, and slow insertion to avoid collision"
+}

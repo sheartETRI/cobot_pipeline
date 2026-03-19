@@ -1,0 +1,276 @@
+{
+  "ir_version": "0.1",
+  "task_id": "task_insert_001",
+  "created_by": "nl_parser",
+  "created_at": "2026-03-18T09:40:00+09:00",
+  "task_spec": {
+    "goal": "assemble",
+    "command_text": "핀을 홀에 삽입해",
+    "priority": "high",
+    "success_condition": [
+      "pin_inserted_into_hole",
+      "no_collision",
+      "release_completed"
+    ],
+    "assumptions": [
+      "pin_pose_known",
+      "hole_pose_known",
+      "gripper_attached"
+    ]
+  },
+  "robot_profile": {
+    "robot_type": "generic_cobot",
+    "arm_dof": 6,
+    "has_gripper": true,
+    "tool_frame": "gripper_tcp",
+    "base_frame": "world",
+    "motion_limits_profile": "default_cobot"
+  },
+  "world_binding": {
+    "scene_id": "scene_insert_01",
+    "objects": {
+      "pin": "obj_pin_01",
+      "hole_block": "obj_hole_block_01"
+    },
+    "frames": {
+      "pin_frame": "obj_pin_01/frame",
+      "hole_frame": "obj_hole_block_01/hole_frame",
+      "pre_insert_frame": "obj_hole_block_01/pre_insert_frame"
+    },
+    "regions": {
+      "insert_zone": "region_insert_01",
+      "safe_approach_zone": "region_safe_approach_01"
+    },
+    "features": {
+      "hole": {
+        "parent_object": "hole_block",
+        "feature_type": "hole",
+        "frame": "hole_frame",
+        "description": "Insertion hole on the block"
+      }
+    }
+  },
+  "action_plan": [
+    {
+      "step_id": "s1",
+      "type": "find_object",
+      "inputs": {
+        "object": "pin"
+      },
+      "constraints": {
+        "must_exist": true
+      },
+      "expected_effects": [
+        "object_pose_bound:pin"
+      ],
+      "on_failure": {
+        "policy": "abort"
+      },
+      "status": "planned"
+    },
+    {
+      "step_id": "s2",
+      "type": "find_object",
+      "inputs": {
+        "object": "hole_block"
+      },
+      "constraints": {
+        "must_exist": true
+      },
+      "expected_effects": [
+        "object_pose_bound:hole_block"
+      ],
+      "on_failure": {
+        "policy": "abort"
+      },
+      "status": "planned"
+    },
+    {
+      "step_id": "s3",
+      "type": "approach",
+      "inputs": {
+        "target_object": "pin",
+        "approach_pose": {
+          "ref": "pin_frame",
+          "offset": [
+            0.0,
+            0.0,
+            0.06
+          ],
+          "orientation_policy": "align_with_object_axis"
+        },
+        "target_feature": "hole"
+      },
+      "constraints": {
+        "min_clearance": 0.015,
+        "speed": 0.1
+      },
+      "expected_effects": [
+        "tcp_at_pregrasp_pose"
+      ],
+      "on_failure": {
+        "policy": "retry_with_higher_clearance"
+      },
+      "status": "planned"
+    },
+    {
+      "step_id": "s4",
+      "type": "grasp",
+      "inputs": {
+        "target_object": "pin",
+        "grasp_mode": "parallel_side_grasp"
+      },
+      "constraints": {
+        "grip_force": 15.0,
+        "require_contact": true
+      },
+      "expected_effects": [
+        "object_attached:pin"
+      ],
+      "on_failure": {
+        "policy": "retry_with_alternative_grasp"
+      },
+      "status": "planned"
+    },
+    {
+      "step_id": "s5",
+      "type": "retreat",
+      "inputs": {
+        "direction": "tool_z_negative",
+        "distance": 0.08
+      },
+      "constraints": {
+        "speed": 0.1
+      },
+      "expected_effects": [
+        "tcp_cleared_from_pick_zone"
+      ],
+      "on_failure": {
+        "policy": "abort"
+      },
+      "status": "planned"
+    },
+    {
+      "step_id": "s6",
+      "type": "move_linear",
+      "inputs": {
+        "target_pose": {
+          "ref": "pre_insert_frame",
+          "offset": [
+            0.0,
+            0.0,
+            0.02
+          ],
+          "orientation_policy": "insert_pre_alignment"
+        }
+      },
+      "constraints": {
+        "speed": 0.08,
+        "collision_avoidance": true
+      },
+      "expected_effects": [
+        "tcp_at_preinsert_pose"
+      ],
+      "on_failure": {
+        "policy": "replan_path"
+      },
+      "status": "planned"
+    },
+    {
+      "step_id": "s7",
+      "type": "align",
+      "inputs": {
+        "source_object": "pin",
+        "target_object": "hole_block",
+        "alignment_mode": "insert_axis_match",
+        "target_feature": "hole"
+      },
+      "constraints": {
+        "angular_tolerance_deg": 2.0,
+        "position_tolerance_m": 0.002
+      },
+      "expected_effects": [
+        "objects_aligned:pin:hole_block"
+      ],
+      "on_failure": {
+        "policy": "retry_alignment"
+      },
+      "status": "planned"
+    },
+    {
+      "step_id": "s8",
+      "type": "insert",
+      "inputs": {
+        "source_object": "pin",
+        "target_object": "hole_block",
+        "insert_axis": "target_z_negative",
+        "insert_depth": 0.025,
+        "target_feature": "hole"
+      },
+      "constraints": {
+        "speed": 0.02,
+        "max_force": 12.0,
+        "require_alignment": true
+      },
+      "expected_effects": [
+        "pin_inserted_into_hole"
+      ],
+      "on_failure": {
+        "policy": "reduce_speed_and_realign"
+      },
+      "status": "planned"
+    },
+    {
+      "step_id": "s9",
+      "type": "release",
+      "inputs": {
+        "target_object": "pin"
+      },
+      "constraints": {},
+      "expected_effects": [
+        "release_completed",
+        "object_detached:pin"
+      ],
+      "on_failure": {
+        "policy": "abort"
+      },
+      "status": "planned"
+    },
+    {
+      "step_id": "s10",
+      "type": "retreat",
+      "inputs": {
+        "direction": "tool_z_negative",
+        "distance": 0.08
+      },
+      "constraints": {
+        "speed": 0.1
+      },
+      "expected_effects": [
+        "task_exit_complete"
+      ],
+      "on_failure": {
+        "policy": "stop_and_hold"
+      },
+      "status": "planned"
+    }
+  ],
+  "verification_policy": {
+    "collision_check": true,
+    "ik_check": true,
+    "joint_limit_check": true,
+    "velocity_limit_check": true,
+    "force_limit_check": true,
+    "max_retry": 3,
+    "acceptance_rules": [
+      "all_steps_executable",
+      "no_collision",
+      "pin_inserted_into_hole"
+    ]
+  },
+  "repair_state": {
+    "retry_count": 0,
+    "last_error": null,
+    "repair_history": []
+  }
+}

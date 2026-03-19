@@ -1,0 +1,125 @@
+{
+  "world_frame": "world",
+  "objects": {
+    "pin": {
+      "object_id": "pin",
+      "object_type": "pin",
+      "pose": {
+        "frame": "world",
+        "position": [0.28, 0.08, 0.03],
+        "orientation": [0.0, 0.0, 0.0, 1.0]
+      },
+      "geometry": {
+        "type": "cylinder",
+        "radius": 0.004,
+        "height": 0.05
+      },
+      "movable": true,
+      "graspable": true,
+      "collision_enabled": true,
+      "metadata": {
+        "role": "insert_part"
+      }
+    },
+    "hole_block": {
+      "object_id": "hole_block",
+      "object_type": "fixture_block",
+      "pose": {
+        "frame": "world",
+        "position": [0.55, 0.1, 0.025],
+        "orientation": [0.0, 0.0, 0.0, 1.0]
+      },
+      "geometry": {
+        "type": "box",
+        "size": [0.08, 0.08, 0.05]
+      },
+      "movable": false,
+      "graspable": false,
+      "collision_enabled": true,
+      "metadata": {
+        "role": "insert_target_fixture"
+      }
+    }
+  },
+  "features": {
+    "pin_grasp_region": {
+      "feature_id": "pin_grasp_region",
+      "parent_object": "pin",
+      "feature_type": "grasp_region",
+      "local_pose": {
+        "frame": "pin",
+        "position": [0.0, 0.0, 0.015],
+        "orientation": [0.0, 0.0, 0.0, 1.0]
+      },
+      "size_hint": [0.01, 0.01, 0.02],
+      "metadata": {
+        "usage": "side_grasp_region"
+      }
+    },
+    "hole": {
+      "feature_id": "hole",
+      "parent_object": "hole_block",
+      "feature_type": "hole",
+      "local_pose": {
+        "frame": "hole_block",
+        "position": [0.0, 0.0, 0.025],
+        "orientation": [0.0, 0.0, 0.0, 1.0]
+      },
+      "size_hint": [0.01, 0.01, 0.03],
+      "axis": [0.0, 0.0, -1.0],
+      "depth": 0.03,
+      "width": 0.0085,
+      "metadata": {
+        "usage": "insert_target_hole"
+      }
+    }
+  },
+  "frames": {
+    "pin_frame": {
+      "frame_id": "pin_frame",
+      "registry_path": "obj_pin_01/frame",
+      "pose": {
+        "frame": "world",
+        "position": [0.28, 0.08, 0.03],
+        "orientation": [0.0, 0.0, 0.0, 1.0]
+      },
+      "metadata": {
+        "source": "object_pose"
+      }
+    },
+    "hole_frame": {
+      "frame_id": "hole_frame",
+      "registry_path": "obj_hole_block_01/hole_frame",
+      "pose": {
+        "frame": "hole_block",
+        "position": [0.0, 0.0, 0.025],
+        "orientation": [0.0, 0.0, 0.0, 1.0]
+      },
+      "metadata": {
+        "source": "feature_target"
+      }
+    },
+    "pre_insert_frame": {
+      "frame_id": "pre_insert_frame",
+      "registry_path": "obj_hole_block_01/pre_insert_frame",
+      "pose": {
+        "frame": "hole_block",
+        "position": [0.0, 0.0, 0.045],
+        "orientation": [0.0, 0.0, 0.0, 1.0]
+      },
+      "metadata": {
+        "source": "approach_waypoint"
+      }
+    }
+  },
+  "robot_state": {
+    "base_frame": "world",
+    "tcp_pose": {
+      "frame": "world",
+      "position": [0.38, 0.02, 0.3],
+      "orientation": [0.0, 0.0, 0.0, 1.0]
+    },
+    "joint_positions": [0.0, -1.1, 1.4, 0.0, 1.1, 0.0],
+    "attached_object": null
+  }
+}
