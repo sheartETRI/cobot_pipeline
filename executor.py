@@ -1,8 +1,9 @@
+# executor.py (updated)
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from copy import deepcopy
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 from world_model import WorldModel
 
@@ -18,7 +19,6 @@ from ir_models import (
     VerificationResult,
     VerificationSummary,
 )
-
 
 @dataclass
 class MockWorldState:
@@ -37,13 +37,37 @@ class MockSimulator:
 
     def __init__(self, ir: GenericCobotIR, world_model: WorldModel | None = None) -> None:
         known_features = set(ir.world_binding.features.keys())
+        bound_objects: set[str] = set()
+        attached_object: Optional[str] = None
+
         if world_model is not None:
+            # features from world
             known_features.update(world_model.features.keys())
 
+            # bound objects: include world objects
+            bound_objects.update(world_model.objects.keys())
+
+            # Try to resolve IR world_binding.objects (registry id) -> world object id
+            # Strategy: for each IR object value (registry base), check world.frames.registry_path
+            # and attempt to infer object id from a frame name (heuristic: <object_id>_frame)
+            for alias, registry_id in ir.world_binding.objects.items():
+                registry_base = registry_id.split("/")[0]
+                for frame_id, frame in world_model.frames.items():
+                    if frame.registry_path.startswith(registry_base):
+                        # heuristic: if frame_id endswith "_frame", remove suffix to get object id
+                        candidate = frame_id
+                        if candidate.endswith("_frame"):
+                            candidate = candidate[: -len("_frame")]
+                        if candidate in world_model.objects:
+                            bound_objects.add(candidate)
+                            break
+            # attached object
+            attached_object = world_model.robot_state.attached_object
+
         self.world = MockWorldState(
-            bound_objects=set(world_model.objects.keys()) if world_model is not None else set(),
+            bound_objects=bound_objects,
             known_features=known_features,
-            attached_object=(world_model.robot_state.attached_object if world_model is not None else None),
+            attached_object=attached_object,
         )
         self.simulator_name = "mock_sim"
 
@@ -250,12 +274,31 @@ def step_input_feature_candidates(step: ActionStep) -> List[str]:
     return features
 
 
-def validate_step_refs(ir: GenericCobotIR, step: ActionStep) -> Tuple[bool, Dict[str, Any] | None]:
+def validate_step_refs(ir: GenericCobotIR, step: ActionStep, world_model: WorldModel | None = None) -> Tuple[bool, Dict[str, Any] | None]:
+    """
+    Validate frames and features used by a step.
+    Accepts world_model to allow validation against world-defined frames/features.
+    """
     known_frames = set(ir.world_binding.frames.keys())
     known_features = set(ir.world_binding.features.keys())
 
+    # include world-defined frames/features if provided
+    world_frame_registry_paths = set()
+    if world_model is not None:
+        known_frames.update(world_model.frames.keys())
+        known_features.update(world_model.features.keys())
+        world_frame_registry_paths = {f.registry_path for f in world_model.frames.values()}
+
+    # include IR->registry values as acceptable frame references (fallback)
+    ir_frame_registry_values = set(ir.world_binding.frames.values())
+
     for ref in step_inputs_frame_candidates(step):
-        if ref not in known_frames:
+        # accepted if:
+        #  - ref is IR frame alias
+        #  - ref is world frame id
+        #  - ref equals one of IR frame registry values (like "obj_xxx/frame")
+        #  - ref equals or matches start of a world frame registry_path
+        if ref not in known_frames and ref not in world_frame_registry_paths and ref not in ir_frame_registry_values:
             return False, {
                 "error_id": "e_unknown_frame_ref",
                 "type": "binding_error",
@@ -294,7 +337,7 @@ def run_ir(ir: GenericCobotIR, world_model: WorldModel | None = None) -> Verific
 
     for step in ir.action_plan:
         before_state = sim.snapshot_state()
-        ok_ref, ref_err = validate_step_refs(ir, step)
+        ok_ref, ref_err = validate_step_refs(ir, step, world_model=world_model)
         if not ok_ref:
             step.status = StepStatus.FAILED
             traces.append(
