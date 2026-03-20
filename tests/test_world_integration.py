@@ -1,9 +1,12 @@
 import json
+from importlib.util import find_spec
 from pathlib import Path
+
+import pytest
 
 from executor import run_ir
 from ir_models import GenericCobotIR
-from run_demo import validate_ir_world_consistency
+from run_demo import resolve_simulator_backend, validate_ir_world_consistency
 from world_model import WorldModel
 
 
@@ -82,7 +85,7 @@ def test_move_linear_aabb_collision_detected():
     result = run_ir(ir, world_model=world)
 
     assert result.status == "failed"
-    assert result.errors[0].error_id == "e_geometry_collision"
+    assert result.errors[0].error_id == "e_aabb_collision"
     assert result.errors[0].step_id == "s5"
 
 
@@ -97,3 +100,31 @@ def test_insert_geometry_collision_detected():
     assert result.status == "failed"
     assert result.errors[0].error_id == "e_insert_geometry_collision"
     assert result.errors[0].step_id == "s8"
+
+
+def test_unknown_simulator_backend_raises():
+    ir = GenericCobotIR.model_validate(load_json("samples/sample_pick_place.json"))
+
+    with pytest.raises(ValueError, match="unknown simulator_backend"):
+        run_ir(ir, simulator_backend="invalid_backend")
+
+
+def test_pybullet_backend_requires_pybullet_or_world():
+    ir = GenericCobotIR.model_validate(load_json("samples/sample_pick_place.json"))
+    world = WorldModel.model_validate(load_json("samples/sample_pick_place.world.json"))
+
+    if find_spec("pybullet") is None:
+        with pytest.raises(RuntimeError, match="pybullet is not installed"):
+            run_ir(ir, world_model=world, simulator_backend="pybullet")
+    else:
+        result = run_ir(ir, world_model=world, simulator_backend="pybullet")
+        assert result.simulator == "pybullet_sim"
+
+
+def test_resolve_simulator_backend_falls_back_to_mock_without_world():
+    assert resolve_simulator_backend("pybullet", None) == "mock"
+
+
+def test_resolve_simulator_backend_keeps_pybullet_with_world():
+    world = WorldModel.model_validate(load_json("samples/sample_pick_place.world.json"))
+    assert resolve_simulator_backend("pybullet", world) == "pybullet"

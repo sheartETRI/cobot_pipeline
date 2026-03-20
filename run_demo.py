@@ -212,15 +212,24 @@ def discover_samples(samples_dir: str) -> list[str]:
     samples = sorted(
         str(path)
         for path in sample_dir.glob("*.json")
-        if not path.name.endswith(".world.json") and not path.name.endswith("_repair_patch.json")
+        if not path.name.endswith(".world.json")
+        and not path.name.endswith("_repair_patch.json")
+        and not path.name.endswith("_verification.json")
     )
     logger.debug("Discovered samples in %s: %s", samples_dir, samples)
     return samples
 
 
+def resolve_simulator_backend(requested_backend: str, world: WorldModel | None) -> str:
+    if requested_backend == "pybullet" and world is None:
+        return "mock"
+    return requested_backend
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run demo IR samples with optional world models")
     parser.add_argument("--samples-dir", type=str, default="samples", help="Directory containing sample IR/world JSON files")
+    parser.add_argument("--sample", type=str, default=None, help="Run a single IR sample JSON file")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as errors in world consistency checks")
     parser.add_argument("--world", type=str, default=None, help="Optional: force a single world file path for all samples")
     parser.add_argument(
@@ -230,12 +239,25 @@ def main() -> None:
         choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
         help="Logging verbosity",
     )
+    parser.add_argument(
+        "--sim-backend",
+        type=str,
+        default="mock",
+        choices=["mock", "pybullet"],
+        help="Simulator backend",
+    )
+    parser.add_argument(
+        "--pybullet-gui",
+        action="store_true",
+        help="Open PyBullet GUI when --sim-backend pybullet is selected",
+    )
     args = parser.parse_args()
 
     configure_logging(args.log_level)
     logger.info(
-        "Starting run_demo with samples_dir=%s strict=%s world=%s log_level=%s",
+        "Starting run_demo with samples_dir=%s sample=%s strict=%s world=%s log_level=%s",
         args.samples_dir,
+        args.sample,
         args.strict,
         args.world,
         args.log_level,
@@ -250,9 +272,12 @@ def main() -> None:
         "samples/sample_insert_failure_ir.json",
     ]
 
-    samples = discover_samples(args.samples_dir)
-    if not samples:
-        samples = default_sample_files
+    if args.sample:
+        samples = [args.sample]
+    else:
+        samples = discover_samples(args.samples_dir)
+        if not samples:
+            samples = default_sample_files
 
     for sample_path in samples:
         logger.info("Processing sample: %s", sample_path)
@@ -316,8 +341,36 @@ def main() -> None:
             logger.info("No world file found for %s; running IR only", sample_path)
             print("[LOAD WORLD] not found -> run with IR only")
 
-        logger.debug("Running IR task_id=%s with world=%s", ir.task_id, world_path)
-        result = run_ir(ir, world_model=world)
+        simulator_backend = resolve_simulator_backend(args.sim_backend, world)
+        if simulator_backend != args.sim_backend:
+            logger.info(
+                "Falling back simulator backend for %s: requested=%s resolved=%s",
+                sample_path,
+                args.sim_backend,
+                simulator_backend,
+            )
+            print(
+                f"[SIM BACKEND] requested={args.sim_backend} -> using={simulator_backend} "
+                "(world model required for pybullet)"
+            )
+
+        logger.debug(
+            "Running IR task_id=%s with world=%s simulator_backend=%s",
+            ir.task_id,
+            world_path,
+            simulator_backend,
+        )
+        try:
+            result = run_ir(
+                ir,
+                world_model=world,
+                simulator_backend=simulator_backend,
+                pybullet_gui=args.pybullet_gui,
+            )
+        except Exception:
+            logger.exception("Simulator backend failed for sample: %s", sample_path)
+            print(f"[SKIP] simulator backend failed: {simulator_backend}")
+            continue
         logger.info(
             "Completed sample %s with status=%s goal_reached=%s collision=%s",
             sample_path,
