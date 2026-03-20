@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+import math
+import time
 from importlib.util import find_spec
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from geometry_utils import aabb_intersect, compute_aabb_from_box, compose_pose, identity_pose
+from geometry_utils import aabb_intersect, compute_aabb_from_box, compose_pose, identity_pose, quat_rotate_vec
 from world_model import BoxGeometry, CylinderGeometry, FeatureModel, ObjectModel, PlaneGeometry, Pose, WorldModel
 
 from ir_models import (
@@ -28,6 +30,25 @@ logger = logging.getLogger(__name__)
 WorldPose = Dict[str, object]
 AABB = Tuple[List[float], List[float]]
 DEFAULT_GRIPPER_SIZE = [0.08, 0.08, 0.12]
+_PERSISTENT_SIMULATOR: Optional["PyBulletSimulator"] = None
+
+
+def keep_persistent_simulator_open(simulator: "PyBulletSimulator") -> None:
+    global _PERSISTENT_SIMULATOR
+    if _PERSISTENT_SIMULATOR is not None and _PERSISTENT_SIMULATOR is not simulator:
+        _PERSISTENT_SIMULATOR.close()
+    _PERSISTENT_SIMULATOR = simulator
+
+
+def get_persistent_simulator() -> Optional["PyBulletSimulator"]:
+    return _PERSISTENT_SIMULATOR
+
+
+def close_persistent_simulator() -> None:
+    global _PERSISTENT_SIMULATOR
+    if _PERSISTENT_SIMULATOR is not None:
+        _PERSISTENT_SIMULATOR.close()
+        _PERSISTENT_SIMULATOR = None
 
 
 @dataclass
@@ -39,6 +60,10 @@ class MockWorldState:
     object_world_poses: Dict[str, WorldPose] = field(default_factory=dict)
     object_aabbs: Dict[str, AABB] = field(default_factory=dict)
     tcp_pose_world: Optional[WorldPose] = None
+    last_approach_vector_world: Optional[List[float]] = None
+    last_released_object: Optional[str] = None
+    last_support_object: Optional[str] = None
+    attached_object_offset_world: Optional[List[float]] = None
 
 
 def pose_model_to_dict(pose: Pose) -> WorldPose:
@@ -47,6 +72,29 @@ def pose_model_to_dict(pose: Pose) -> WorldPose:
         "position": list(pose.position),
         "orientation": list(pose.orientation),
     }
+
+
+def vector_subtract(a: List[float], b: List[float]) -> List[float]:
+    return [a[i] - b[i] for i in range(3)]
+
+
+def vector_norm(v: List[float]) -> float:
+    return math.sqrt(sum(component * component for component in v))
+
+
+def normalize_vector(v: List[float]) -> List[float]:
+    norm = vector_norm(v)
+    if norm <= 1e-9:
+        return [0.0, 0.0, 1.0]
+    return [component / norm for component in v]
+
+
+def vector_add(a: List[float], b: List[float]) -> List[float]:
+    return [a[i] + b[i] for i in range(3)]
+
+
+def vector_scale(v: List[float], scalar: float) -> List[float]:
+    return [component * scalar for component in v]
 
 
 class MockSimulator:
@@ -198,6 +246,116 @@ class MockSimulator:
             return None
         feature: FeatureModel = self.world_model.get_feature(feature_id)
         return self.resolve_pose_to_world(feature.local_pose)
+
+    def resolve_pose_ref_base_world(self, pose_ref: Any) -> Optional[WorldPose]:
+        if self.world_model is None:
+            return None
+
+        ref_name = pose_ref.ref
+        if ref_name in {self.world_model.world_frame, "world"}:
+            return identity_pose(self.world_model.world_frame)
+        if self.world_model.has_frame(ref_name):
+            return self.resolve_pose_to_world(self.world_model.get_frame(ref_name).pose)
+        if self.world_model.has_object(ref_name):
+            return self.resolve_pose_to_world(self.world_model.get_object(ref_name).pose)
+        if self.world_model.has_feature(ref_name):
+            return self.resolve_feature_pose_to_world(ref_name)
+
+        matched_frame = next(
+            (frame for frame in self.world_model.frames.values() if frame.registry_path == ref_name),
+            None,
+        )
+        if matched_frame is not None:
+            return self.resolve_pose_to_world(matched_frame.pose)
+        return None
+
+    def direction_vector_world(self, direction: str) -> List[float]:
+        if self.world.tcp_pose_world is None:
+            return [0.0, 0.0, 1.0]
+
+        if direction == "tool_z_negative" and self.world.last_approach_vector_world is not None:
+            return normalize_vector(self.world.last_approach_vector_world)
+
+        direction_mapping = {
+            "world_x_positive": [1.0, 0.0, 0.0],
+            "world_x_negative": [-1.0, 0.0, 0.0],
+            "world_y_positive": [0.0, 1.0, 0.0],
+            "world_y_negative": [0.0, -1.0, 0.0],
+            "world_z_positive": [0.0, 0.0, 1.0],
+            "world_z_negative": [0.0, 0.0, -1.0],
+            "tool_x_positive": quat_rotate_vec(list(self.world.tcp_pose_world["orientation"]), [1.0, 0.0, 0.0]),
+            "tool_x_negative": quat_rotate_vec(list(self.world.tcp_pose_world["orientation"]), [-1.0, 0.0, 0.0]),
+            "tool_y_positive": quat_rotate_vec(list(self.world.tcp_pose_world["orientation"]), [0.0, 1.0, 0.0]),
+            "tool_y_negative": quat_rotate_vec(list(self.world.tcp_pose_world["orientation"]), [0.0, -1.0, 0.0]),
+            "tool_z_positive": quat_rotate_vec(list(self.world.tcp_pose_world["orientation"]), [0.0, 0.0, 1.0]),
+            "tool_z_negative": quat_rotate_vec(list(self.world.tcp_pose_world["orientation"]), [0.0, 0.0, -1.0]),
+        }
+        return normalize_vector(direction_mapping.get(direction, [0.0, 0.0, 1.0]))
+
+    def retreat_target_pose_world(self, direction: str, distance: float) -> Optional[WorldPose]:
+        if self.world.tcp_pose_world is None:
+            return None
+        direction_world = self.direction_vector_world(direction)
+        current_position = list(self.world.tcp_pose_world["position"])
+        retreat_position = [
+            current_position[i] + direction_world[i] * distance
+            for i in range(3)
+        ]
+        return {
+            "frame": self.world.tcp_pose_world["frame"],
+            "position": retreat_position,
+            "orientation": list(self.world.tcp_pose_world["orientation"]),
+        }
+
+    def object_height(self, object_id: str) -> float:
+        if self.world_model is None or not self.world_model.has_object(object_id):
+            return 0.02
+        return self.geometry_size(self.world_model.get_object(object_id))[2]
+
+    def attached_object_pose_for_tcp(self, object_id: str, tcp_pose_world: WorldPose) -> WorldPose:
+        offset = self.world.attached_object_offset_world or [0.0, 0.0, 0.0]
+        return {
+            "frame": tcp_pose_world["frame"],
+            "position": vector_add(list(tcp_pose_world["position"]), offset),
+            "orientation": list(tcp_pose_world["orientation"]),
+        }
+
+    def tcp_pose_for_object_pose(self, object_pose_world: WorldPose) -> WorldPose:
+        offset = self.world.attached_object_offset_world or [0.0, 0.0, 0.0]
+        return {
+            "frame": object_pose_world["frame"],
+            "position": vector_subtract(list(object_pose_world["position"]), offset),
+            "orientation": list(object_pose_world["orientation"]),
+        }
+
+    def compute_place_object_pose(
+        self,
+        object_id: str,
+        destination_pose_world: Optional[WorldPose],
+        target_feature: Optional[str] = None,
+    ) -> Optional[WorldPose]:
+        if destination_pose_world is None:
+            return None
+        if self.world_model is None or target_feature is None or not self.world_model.has_feature(target_feature):
+            return destination_pose_world
+
+        feature = self.world_model.get_feature(target_feature)
+        feature_pose_world = self.resolve_feature_pose_to_world(target_feature)
+        if feature_pose_world is None:
+            return destination_pose_world
+
+        support_axis = quat_rotate_vec(list(feature_pose_world["orientation"]), [0.0, 0.0, 1.0])
+        support_axis = normalize_vector(support_axis)
+        object_half_height = self.object_height(object_id) / 2.0
+        target_position = vector_add(
+            list(feature_pose_world["position"]),
+            vector_scale(support_axis, object_half_height),
+        )
+        return {
+            "frame": destination_pose_world["frame"],
+            "position": target_position,
+            "orientation": list(destination_pose_world["orientation"]),
+        }
 
     def compute_object_aabb(self, object_id: str, world_pose: Optional[WorldPose] = None) -> AABB:
         if self.world_model is None:
@@ -378,6 +536,9 @@ class MockSimulator:
             "attached_object": self.world.attached_object,
             "achieved_effects": sorted(self.world.achieved_effects),
             "tcp_pose_world": self.world.tcp_pose_world,
+            "last_released_object": self.world.last_released_object,
+            "last_support_object": self.world.last_support_object,
+            "attached_object_offset_world": self.world.attached_object_offset_world,
         }
 
     def execute_step(self, step: ActionStep) -> Tuple[bool, Dict[str, Any] | None]:
@@ -420,6 +581,7 @@ class MockSimulator:
                 }
 
             approach_pose_world = self.resolve_pose_ref_to_world(parsed_inputs.approach_pose)
+            approach_base_pose_world = self.resolve_pose_ref_base_world(parsed_inputs.approach_pose)
             excluded = {target}
             owner = self.infer_owner_for_ref(parsed_inputs.approach_pose.ref)
             if owner is not None:
@@ -434,6 +596,13 @@ class MockSimulator:
                 return False, collision
 
             self.world.tcp_pose_world = approach_pose_world
+            if approach_pose_world is not None and approach_base_pose_world is not None:
+                self.world.last_approach_vector_world = normalize_vector(
+                    vector_subtract(
+                        list(approach_pose_world["position"]),
+                        list(approach_base_pose_world["position"]),
+                    )
+                )
             if parsed_inputs.target_feature:
                 self.world.achieved_effects.add(f"tcp_at_pregrasp_pose:{parsed_inputs.target_feature}")
             else:
@@ -452,8 +621,23 @@ class MockSimulator:
                     "suggested_repairs": ["add_find_object_step"],
                 }
             self.world.attached_object = target
+            self.world.last_released_object = None
+            self.world.last_support_object = None
             if self.world.tcp_pose_world is not None:
-                self.update_object_world_pose(target, self.world.tcp_pose_world)
+                current_object_pose = self.world.object_world_poses.get(target)
+                if current_object_pose is None and self.world_model is not None and self.world_model.has_object(target):
+                    current_object_pose = self.resolve_pose_to_world(self.world_model.get_object(target).pose)
+                if current_object_pose is not None:
+                    self.world.attached_object_offset_world = vector_subtract(
+                        list(current_object_pose["position"]),
+                        list(self.world.tcp_pose_world["position"]),
+                    )
+                else:
+                    self.world.attached_object_offset_world = [0.0, 0.0, 0.0]
+                self.update_object_world_pose(
+                    target,
+                    self.attached_object_pose_for_tcp(target, self.world.tcp_pose_world),
+                )
             self.world.achieved_effects.add(f"object_attached:{target}")
             if parsed_inputs.target_feature:
                 self.world.achieved_effects.add(f"grasp_target_feature:{target}:{parsed_inputs.target_feature}")
@@ -461,6 +645,30 @@ class MockSimulator:
             return True, None
 
         if step_type == PrimitiveType.RETREAT:
+            retreat_pose_world = self.retreat_target_pose_world(parsed_inputs.direction, parsed_inputs.distance)
+            excluded_objects = set()
+            if self.world.attached_object is not None:
+                excluded_objects.add(self.world.attached_object)
+            if self.world.last_released_object is not None:
+                excluded_objects.add(self.world.last_released_object)
+            if self.world.last_support_object is not None:
+                excluded_objects.add(self.world.last_support_object)
+            collision = self.check_pose_collision(
+                step_type=step_type,
+                target_pose_world=retreat_pose_world,
+                excluded_objects=excluded_objects,
+                attached_object=self.world.attached_object,
+            )
+            if collision is not None:
+                return False, collision
+            self.world.tcp_pose_world = retreat_pose_world
+            if self.world.attached_object is not None and retreat_pose_world is not None:
+                self.update_object_world_pose(
+                    self.world.attached_object,
+                    self.attached_object_pose_for_tcp(self.world.attached_object, retreat_pose_world),
+                )
+            self.world.achieved_effects.add("tcp_retreated")
+            logger.debug("retreat succeeded direction=%s pose=%s", parsed_inputs.direction, retreat_pose_world)
             return True, None
 
         if step_type == PrimitiveType.MOVE_LINEAR:
@@ -482,7 +690,10 @@ class MockSimulator:
 
             self.world.tcp_pose_world = target_pose_world
             if self.world.attached_object is not None and target_pose_world is not None:
-                self.update_object_world_pose(self.world.attached_object, target_pose_world)
+                self.update_object_world_pose(
+                    self.world.attached_object,
+                    self.attached_object_pose_for_tcp(self.world.attached_object, target_pose_world),
+                )
             logger.debug("move_linear succeeded to pose=%s", target_pose_world)
             return True, None
 
@@ -511,9 +722,15 @@ class MockSimulator:
             if collision is not None:
                 return False, collision
 
-            if destination_pose_world is not None:
-                self.world.tcp_pose_world = destination_pose_world
-                self.update_object_world_pose(target, destination_pose_world)
+            object_destination_pose_world = self.compute_place_object_pose(
+                target,
+                destination_pose_world,
+                parsed_inputs.target_feature,
+            )
+            if object_destination_pose_world is not None:
+                self.world.tcp_pose_world = self.tcp_pose_for_object_pose(object_destination_pose_world)
+                self.update_object_world_pose(target, object_destination_pose_world)
+            self.world.last_support_object = owner
             effect_suffix = (
                 f"{target}:{parsed_inputs.target_feature}"
                 if parsed_inputs.target_feature
@@ -581,6 +798,7 @@ class MockSimulator:
             if target_feature_pose_world is not None:
                 self.world.tcp_pose_world = target_feature_pose_world
                 self.update_object_world_pose(parsed_inputs.source_object, target_feature_pose_world)
+            self.world.last_support_object = parsed_inputs.target_object
 
             target_suffix = (
                 parsed_inputs.target_feature
@@ -595,6 +813,8 @@ class MockSimulator:
             target = parsed_inputs.target_object
             if self.world.attached_object == target:
                 self.world.attached_object = None
+            self.world.attached_object_offset_world = None
+            self.world.last_released_object = target
             self.world.achieved_effects.add("release_completed")
             self.world.achieved_effects.add(f"object_detached:{target}")
             logger.debug("release succeeded target=%s", target)
@@ -645,6 +865,9 @@ class PyBulletSimulator(MockSimulator):
         *,
         gui: bool = False,
         path_samples: int = 12,
+        motion_delay: float = 0.0,
+        step_pause: float = 0.0,
+        step_wait_for_input: bool = False,
     ) -> None:
         if world_model is None:
             raise ValueError("PyBulletSimulator requires a world_model")
@@ -659,13 +882,20 @@ class PyBulletSimulator(MockSimulator):
         import pybullet as pybullet
 
         self.p = pybullet
+        self.gui = gui
         self.client_id = self.p.connect(self.p.GUI if gui else self.p.DIRECT)
         self.path_samples = max(path_samples, 2)
+        self.motion_delay = max(motion_delay, 0.0)
+        self.step_pause = max(step_pause, 0.0)
+        self.step_wait_for_input = step_wait_for_input
         self.simulator_name = "pybullet_sim"
         self.body_ids: Dict[str, int] = {}
         self.tcp_body_id: Optional[int] = None
         self.grasp_constraint_id: Optional[int] = None
         self.gripper_half_height = self.gripper_size[2] / 2.0
+        self.debug_item_ids: List[int] = []
+        self.current_step_text_id: Optional[int] = None
+        self.previous_tcp_debug_pose: Optional[WorldPose] = None
 
         self.p.resetSimulation(physicsClientId=self.client_id)
         self.p.setGravity(0.0, 0.0, -9.81, physicsClientId=self.client_id)
@@ -673,6 +903,7 @@ class PyBulletSimulator(MockSimulator):
 
         self._build_world_bodies()
         self._build_tcp_proxy()
+        self._initialize_debug_visuals()
 
     def close(self) -> None:
         if getattr(self, "client_id", None) is not None:
@@ -740,10 +971,9 @@ class PyBulletSimulator(MockSimulator):
 
     def _build_world_bodies(self) -> None:
         for object_id, obj in self.world_model.objects.items():
-            mass = 0.2 if obj.movable else 0.0
             self.body_ids[object_id] = self._create_body(
                 object_id,
-                mass=mass,
+                mass=0.0,
                 collision_enabled=obj.collision_enabled,
             )
         logger.debug("Created PyBullet bodies: %s", self.body_ids)
@@ -772,6 +1002,169 @@ class PyBulletSimulator(MockSimulator):
             physicsClientId=self.client_id,
         )
 
+    def _add_debug_item(self, item_id: int) -> None:
+        if item_id >= 0:
+            self.debug_item_ids.append(item_id)
+
+    def _draw_axes(self, pose_world: WorldPose, length: float = 0.05, line_width: float = 2.0) -> None:
+        if not self.gui:
+            return
+        origin = list(pose_world["position"])
+        mat = self.p.getMatrixFromQuaternion(list(pose_world["orientation"]))
+        x_end = [origin[0] + mat[0] * length, origin[1] + mat[3] * length, origin[2] + mat[6] * length]
+        y_end = [origin[0] + mat[1] * length, origin[1] + mat[4] * length, origin[2] + mat[7] * length]
+        z_end = [origin[0] + mat[2] * length, origin[1] + mat[5] * length, origin[2] + mat[8] * length]
+        self._add_debug_item(
+            self.p.addUserDebugLine(
+                origin,
+                x_end,
+                [1.0, 0.1, 0.1],
+                lineWidth=line_width,
+                lifeTime=0,
+                physicsClientId=self.client_id,
+            )
+        )
+        self._add_debug_item(
+            self.p.addUserDebugLine(
+                origin,
+                y_end,
+                [0.1, 1.0, 0.1],
+                lineWidth=line_width,
+                lifeTime=0,
+                physicsClientId=self.client_id,
+            )
+        )
+        self._add_debug_item(
+            self.p.addUserDebugLine(
+                origin,
+                z_end,
+                [0.1, 0.3, 1.0],
+                lineWidth=line_width,
+                lifeTime=0,
+                physicsClientId=self.client_id,
+            )
+        )
+
+    def _add_label(
+        self,
+        text: str,
+        pose_world: WorldPose,
+        *,
+        color: Tuple[float, float, float] = (1.0, 1.0, 1.0),
+        size: float = 1.0,
+        z_offset: float = 0.02,
+    ) -> None:
+        if not self.gui:
+            return
+        position = list(pose_world["position"])
+        position[2] += z_offset
+        self._add_debug_item(
+            self.p.addUserDebugText(
+                text,
+                position,
+                textColorRGB=color,
+                textSize=size,
+                lifeTime=0,
+                physicsClientId=self.client_id,
+            )
+        )
+
+    def _focus_camera_on_scene(self) -> None:
+        if not self.gui or not self.world.object_aabbs:
+            return
+        aabb_mins = [float("inf")] * 3
+        aabb_maxs = [float("-inf")] * 3
+        for minv, maxv in self.world.object_aabbs.values():
+            for i in range(3):
+                aabb_mins[i] = min(aabb_mins[i], minv[i])
+                aabb_maxs[i] = max(aabb_maxs[i], maxv[i])
+        if any(math.isinf(value) for value in aabb_mins + aabb_maxs):
+            return
+        center = [(aabb_mins[i] + aabb_maxs[i]) / 2.0 for i in range(3)]
+        extent = [aabb_maxs[i] - aabb_mins[i] for i in range(3)]
+        diagonal = math.sqrt(sum(axis * axis for axis in extent))
+        distance = max(diagonal * 1.8, 0.35)
+        self.p.resetDebugVisualizerCamera(
+            cameraDistance=distance,
+            cameraYaw=45.0,
+            cameraPitch=-30.0,
+            cameraTargetPosition=center,
+            physicsClientId=self.client_id,
+        )
+
+    def _draw_static_debug_items(self) -> None:
+        if not self.gui:
+            return
+        for object_id, pose in self.world.object_world_poses.items():
+            self._draw_axes(pose, length=0.03)
+            self._add_label(object_id, pose, color=(1.0, 1.0, 1.0), size=1.1)
+
+        for frame_id, frame in self.world_model.frames.items():
+            try:
+                frame_pose = self.resolve_pose_to_world(frame.pose)
+            except Exception:
+                logger.debug("Failed to resolve frame pose for debug item: %s", frame_id, exc_info=True)
+                continue
+            self._draw_axes(frame_pose, length=0.05, line_width=1.5)
+            self._add_label(frame_id, frame_pose, color=(0.9, 0.9, 0.2), size=1.0, z_offset=0.03)
+
+        for feature_id, feature in self.world_model.features.items():
+            try:
+                feature_pose = self.resolve_feature_pose_to_world(feature_id)
+            except Exception:
+                logger.debug("Failed to resolve feature pose for debug item: %s", feature_id, exc_info=True)
+                continue
+            if feature_pose is None:
+                continue
+            self._draw_axes(feature_pose, length=0.04, line_width=1.5)
+            self._add_label(feature_id, feature_pose, color=(0.2, 0.95, 0.2), size=1.0, z_offset=0.025)
+
+        if self.world.tcp_pose_world is not None:
+            self._draw_axes(self.world.tcp_pose_world, length=0.06, line_width=2.5)
+            self._add_label("gripper_tcp", self.world.tcp_pose_world, color=(0.3, 0.7, 1.0), size=1.1, z_offset=0.04)
+
+    def _initialize_debug_visuals(self) -> None:
+        if not self.gui:
+            return
+        try:
+            self._focus_camera_on_scene()
+        except Exception:
+            logger.debug("Failed to auto-focus PyBullet camera", exc_info=True)
+        self._draw_static_debug_items()
+
+    def _update_step_debug_label(self, step: ActionStep) -> None:
+        if not self.gui:
+            return
+        if self.current_step_text_id is not None:
+            self.p.removeUserDebugItem(self.current_step_text_id, physicsClientId=self.client_id)
+        label_position = [0.0, 0.0, 0.25]
+        if self.world.tcp_pose_world is not None:
+            tcp_position = list(self.world.tcp_pose_world["position"])
+            label_position = [tcp_position[0], tcp_position[1], tcp_position[2] + 0.12]
+        self.current_step_text_id = self.p.addUserDebugText(
+            f"{step.step_id}: {step.type.value}",
+            label_position,
+            textColorRGB=[1.0, 0.85, 0.1],
+            textSize=1.4,
+            lifeTime=0,
+            physicsClientId=self.client_id,
+        )
+
+    def _draw_tcp_path_segment(self, start_pose: WorldPose, end_pose: WorldPose, color: List[float] | None = None) -> None:
+        if not self.gui:
+            return
+        segment_color = color or [1.0, 1.0, 0.0]
+        self._add_debug_item(
+            self.p.addUserDebugLine(
+                list(start_pose["position"]),
+                list(end_pose["position"]),
+                segment_color,
+                lineWidth=1.5,
+                lifeTime=0,
+                physicsClientId=self.client_id,
+            )
+        )
+
     def _set_tcp_pose_world(self, pose_world: WorldPose) -> None:
         self.world.tcp_pose_world = pose_world
         self.p.resetBasePositionAndOrientation(
@@ -781,18 +1174,33 @@ class PyBulletSimulator(MockSimulator):
             physicsClientId=self.client_id,
         )
         if self.world.attached_object is not None:
-            self.update_object_world_pose(self.world.attached_object, pose_world)
+            attached_object_pose = self.attached_object_pose_for_tcp(self.world.attached_object, pose_world)
+            self.update_object_world_pose(self.world.attached_object, attached_object_pose)
             attached_body_id = self.body_ids[self.world.attached_object]
             self.p.resetBasePositionAndOrientation(
                 attached_body_id,
-                pose_world["position"],
-                pose_world["orientation"],
+                attached_object_pose["position"],
+                attached_object_pose["orientation"],
                 physicsClientId=self.client_id,
             )
 
     def _step_simulation(self, num_steps: int = 4) -> None:
         for _ in range(num_steps):
             self.p.stepSimulation(physicsClientId=self.client_id)
+
+    def _maybe_sleep_motion_delay(self) -> None:
+        if self.gui and self.motion_delay > 0.0:
+            time.sleep(self.motion_delay)
+
+    def _maybe_pause_after_step(self) -> None:
+        if self.gui and self.step_wait_for_input:
+            try:
+                input("[PYBULLET STEP] Press Enter to continue to the next step...")
+            except EOFError:
+                logger.debug("Step wait-for-input skipped because stdin is not interactive")
+            return
+        if self.gui and self.step_pause > 0.0:
+            time.sleep(self.step_pause)
 
     def _interpolate_pose(self, start_pose: WorldPose, end_pose: WorldPose, ratio: float) -> WorldPose:
         start_position = start_pose["position"]
@@ -851,20 +1259,47 @@ class PyBulletSimulator(MockSimulator):
         moving_entities: List[str],
     ) -> Dict[str, Any] | None:
         start_pose = self.world.tcp_pose_world or target_pose_world
+        previous_pose = {
+            "frame": start_pose["frame"],
+            "position": list(start_pose["position"]),
+            "orientation": list(start_pose["orientation"]),
+        }
         for sample_index in range(1, self.path_samples + 1):
             ratio = sample_index / self.path_samples
             sample_pose = self._interpolate_pose(start_pose, target_pose_world, ratio)
+            self._draw_tcp_path_segment(previous_pose, sample_pose)
             self._set_tcp_pose_world(sample_pose)
             self._step_simulation()
+            self._maybe_sleep_motion_delay()
             collision = self._collision_query(excluded_objects, moving_entities, step_type)
             if collision is not None:
                 return collision
+            previous_pose = {
+                "frame": sample_pose["frame"],
+                "position": list(sample_pose["position"]),
+                "orientation": list(sample_pose["orientation"]),
+            }
         return None
 
     def _attach_object(self, object_id: str) -> None:
         body_id = self.body_ids[object_id]
         if self.grasp_constraint_id is not None:
             self.p.removeConstraint(self.grasp_constraint_id, physicsClientId=self.client_id)
+        parent_frame_position = self.world.attached_object_offset_world or [0.0, 0.0, -self.gripper_half_height]
+        if self.world.tcp_pose_world is not None:
+            attached_pose_world = self.attached_object_pose_for_tcp(object_id, self.world.tcp_pose_world)
+            self.p.resetBasePositionAndOrientation(
+                body_id,
+                attached_pose_world["position"],
+                attached_pose_world["orientation"],
+                physicsClientId=self.client_id,
+            )
+            self.p.resetBaseVelocity(
+                body_id,
+                linearVelocity=[0.0, 0.0, 0.0],
+                angularVelocity=[0.0, 0.0, 0.0],
+                physicsClientId=self.client_id,
+            )
         self.p.changeDynamics(body_id, -1, mass=0.001, physicsClientId=self.client_id)
         self.p.setCollisionFilterPair(self.tcp_body_id, body_id, -1, -1, 0, physicsClientId=self.client_id)
         self.grasp_constraint_id = self.p.createConstraint(
@@ -874,7 +1309,7 @@ class PyBulletSimulator(MockSimulator):
             childLinkIndex=-1,
             jointType=self.p.JOINT_FIXED,
             jointAxis=[0.0, 0.0, 0.0],
-            parentFramePosition=[0.0, 0.0, -self.gripper_half_height],
+            parentFramePosition=parent_frame_position,
             childFramePosition=[0.0, 0.0, 0.0],
             physicsClientId=self.client_id,
         )
@@ -885,22 +1320,41 @@ class PyBulletSimulator(MockSimulator):
         if self.grasp_constraint_id is not None:
             self.p.removeConstraint(self.grasp_constraint_id, physicsClientId=self.client_id)
             self.grasp_constraint_id = None
-        obj = self.world_model.get_object(object_id)
-        self.p.changeDynamics(body_id, -1, mass=0.2 if obj.movable else 0.0, physicsClientId=self.client_id)
+        released_pose_world = self.world.object_world_poses.get(object_id)
+        if released_pose_world is not None:
+            self.p.resetBasePositionAndOrientation(
+                body_id,
+                released_pose_world["position"],
+                released_pose_world["orientation"],
+                physicsClientId=self.client_id,
+            )
+        self.p.resetBaseVelocity(
+            body_id,
+            linearVelocity=[0.0, 0.0, 0.0],
+            angularVelocity=[0.0, 0.0, 0.0],
+            physicsClientId=self.client_id,
+        )
+        self.p.changeDynamics(body_id, -1, mass=0.0, physicsClientId=self.client_id)
         self.p.setCollisionFilterPair(self.tcp_body_id, body_id, -1, -1, 1, physicsClientId=self.client_id)
         self._step_simulation()
 
     def execute_step(self, step: ActionStep) -> Tuple[bool, Dict[str, Any] | None]:
         parsed_inputs = step.parsed_inputs()
         step_type = step.type
+        self._update_step_debug_label(step)
 
         if step_type == PrimitiveType.FIND_OBJECT:
-            return super().execute_step(step)
+            result = super().execute_step(step)
+            self._maybe_pause_after_step()
+            return result
 
         if step_type == PrimitiveType.APPROACH:
             if parsed_inputs.target_object not in self.world.bound_objects:
-                return super().execute_step(step)
+                result = super().execute_step(step)
+                self._maybe_pause_after_step()
+                return result
             target_pose_world = self.resolve_pose_ref_to_world(parsed_inputs.approach_pose)
+            approach_base_pose_world = self.resolve_pose_ref_base_world(parsed_inputs.approach_pose)
             excluded = {parsed_inputs.target_object}
             owner = self.infer_owner_for_ref(parsed_inputs.approach_pose.ref)
             if owner is not None:
@@ -918,12 +1372,21 @@ class PyBulletSimulator(MockSimulator):
                 if parsed_inputs.target_feature
                 else "tcp_at_pregrasp_pose"
             )
+            if target_pose_world is not None and approach_base_pose_world is not None:
+                self.world.last_approach_vector_world = normalize_vector(
+                    vector_subtract(
+                        list(target_pose_world["position"]),
+                        list(approach_base_pose_world["position"]),
+                    )
+                )
+            self._maybe_pause_after_step()
             return True, None
 
         if step_type == PrimitiveType.GRASP:
             ok, err = super().execute_step(step)
             if ok and self.world.attached_object is not None:
                 self._attach_object(self.world.attached_object)
+            self._maybe_pause_after_step()
             return ok, err
 
         if step_type == PrimitiveType.MOVE_LINEAR:
@@ -942,28 +1405,65 @@ class PyBulletSimulator(MockSimulator):
             )
             if collision is not None:
                 return False, collision
+            self._maybe_pause_after_step()
+            return True, None
+
+        if step_type == PrimitiveType.RETREAT:
+            retreat_pose_world = self.retreat_target_pose_world(parsed_inputs.direction, parsed_inputs.distance)
+            if retreat_pose_world is None:
+                result = super().execute_step(step)
+                self._maybe_pause_after_step()
+                return result
+            excluded = set()
+            if self.world.attached_object is not None:
+                excluded.add(self.world.attached_object)
+            if self.world.last_released_object is not None:
+                excluded.add(self.world.last_released_object)
+            if self.world.last_support_object is not None:
+                excluded.add(self.world.last_support_object)
+            collision = self._move_tcp_linearly(
+                retreat_pose_world,
+                step_type=step_type,
+                excluded_objects=excluded,
+                moving_entities=["gripper_tcp"] + ([self.world.attached_object] if self.world.attached_object else []),
+            )
+            if collision is not None:
+                return False, collision
+            self.world.achieved_effects.add("tcp_retreated")
+            self._maybe_pause_after_step()
             return True, None
 
         if step_type == PrimitiveType.MOVE_JOINT:
             logger.debug("MOVE_JOINT is approximated as a no-op in PyBullet demo backend")
+            self._maybe_pause_after_step()
             return True, None
 
         if step_type == PrimitiveType.PLACE:
             ok, err = super().execute_step(step)
             if ok and self.world.tcp_pose_world is not None:
+                object_pose_world = self.world.object_world_poses.get(parsed_inputs.target_object)
                 self.p.resetBasePositionAndOrientation(
                     self.body_ids[parsed_inputs.target_object],
-                    self.world.tcp_pose_world["position"],
-                    self.world.tcp_pose_world["orientation"],
+                    object_pose_world["position"] if object_pose_world is not None else self.world.tcp_pose_world["position"],
+                    object_pose_world["orientation"] if object_pose_world is not None else self.world.tcp_pose_world["orientation"],
+                    physicsClientId=self.client_id,
+                )
+                self.p.resetBaseVelocity(
+                    self.body_ids[parsed_inputs.target_object],
+                    linearVelocity=[0.0, 0.0, 0.0],
+                    angularVelocity=[0.0, 0.0, 0.0],
                     physicsClientId=self.client_id,
                 )
                 self._step_simulation()
+            self._maybe_pause_after_step()
             return ok, err
 
         if step_type == PrimitiveType.RELEASE:
             if self.world.attached_object == parsed_inputs.target_object:
                 self._detach_object(parsed_inputs.target_object)
-            return super().execute_step(step)
+            result = super().execute_step(step)
+            self._maybe_pause_after_step()
+            return result
 
         if step_type == PrimitiveType.INSERT:
             geometry_collision = self.check_insert_geometry_collision(parsed_inputs)
@@ -984,9 +1484,13 @@ class PyBulletSimulator(MockSimulator):
             )
             if collision is not None:
                 return False, collision
-            return super().execute_step(step)
+            result = super().execute_step(step)
+            self._maybe_pause_after_step()
+            return result
 
-        return super().execute_step(step)
+        result = super().execute_step(step)
+        self._maybe_pause_after_step()
+        return result
 
 
 def step_inputs_frame_candidates(step: ActionStep) -> List[str]:
@@ -1071,6 +1575,10 @@ def run_ir(
     *,
     simulator_backend: str = "mock",
     pybullet_gui: bool = False,
+    keep_simulator_open: bool = False,
+    pybullet_motion_delay: float = 0.0,
+    pybullet_step_pause: float = 0.0,
+    pybullet_step_wait_for_input: bool = False,
 ) -> VerificationResult:
     if simulator_backend == "mock":
         sim: MockSimulator = MockSimulator(ir, world_model=world_model)
@@ -1079,6 +1587,9 @@ def run_ir(
             ir,
             world_model=world_model,
             gui=pybullet_gui,
+            motion_delay=pybullet_motion_delay,
+            step_pause=pybullet_step_pause,
+            step_wait_for_input=pybullet_step_wait_for_input,
         )
     else:
         raise ValueError(f"unknown simulator_backend: {simulator_backend}")
@@ -1214,5 +1725,12 @@ def run_ir(
             traces=traces,
         )
     finally:
-        if hasattr(sim, "close"):
+        if (
+            keep_simulator_open
+            and simulator_backend == "pybullet"
+            and pybullet_gui
+            and isinstance(sim, PyBulletSimulator)
+        ):
+            keep_persistent_simulator_open(sim)
+        elif hasattr(sim, "close"):
             sim.close()

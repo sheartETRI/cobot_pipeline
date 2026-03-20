@@ -4,12 +4,13 @@ import argparse
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import List, Tuple
 
 from pydantic import ValidationError
 
-from executor import run_ir
+from executor import close_persistent_simulator, get_persistent_simulator, run_ir
 from ir_models import GenericCobotIR, VerificationResult
 from world_model import WorldModel
 
@@ -226,6 +227,24 @@ def resolve_simulator_backend(requested_backend: str, world: WorldModel | None) 
     return requested_backend
 
 
+def wait_for_pybullet_gui_close() -> None:
+    simulator = get_persistent_simulator()
+    if simulator is None:
+        return
+
+    print("[PYBULLET GUI] close the window to finish this sample, or press Ctrl+C to stop it here.")
+    try:
+        while simulator.client_id is not None:
+            info = simulator.p.getConnectionInfo(simulator.client_id)
+            if not info.get("isConnected", 0):
+                break
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        print("\n[PYBULLET GUI] interrupt received, closing simulator.")
+    finally:
+        close_persistent_simulator()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run demo IR samples with optional world models")
     parser.add_argument("--samples-dir", type=str, default="samples", help="Directory containing sample IR/world JSON files")
@@ -250,6 +269,23 @@ def main() -> None:
         "--pybullet-gui",
         action="store_true",
         help="Open PyBullet GUI when --sim-backend pybullet is selected",
+    )
+    parser.add_argument(
+        "--pybullet-motion-delay",
+        type=float,
+        default=0.0,
+        help="Sleep duration in seconds after each PyBullet motion sample in GUI mode",
+    )
+    parser.add_argument(
+        "--pybullet-step-pause",
+        type=float,
+        default=0.0,
+        help="Sleep duration in seconds after each PyBullet primitive step in GUI mode",
+    )
+    parser.add_argument(
+        "--pybullet-step-wait",
+        action="store_true",
+        help="Wait for Enter between PyBullet primitive steps in GUI mode",
     )
     args = parser.parse_args()
 
@@ -366,6 +402,10 @@ def main() -> None:
                 world_model=world,
                 simulator_backend=simulator_backend,
                 pybullet_gui=args.pybullet_gui,
+                keep_simulator_open=args.pybullet_gui,
+                pybullet_motion_delay=args.pybullet_motion_delay,
+                pybullet_step_pause=args.pybullet_step_pause,
+                pybullet_step_wait_for_input=args.pybullet_step_wait,
             )
         except Exception:
             logger.exception("Simulator backend failed for sample: %s", sample_path)
@@ -382,6 +422,9 @@ def main() -> None:
         print_human_summary(sample_path, ir, result, world=world)
         print("[RESULT]")
         print(result.model_dump_json(indent=2, exclude_none=True))
+
+        if simulator_backend == "pybullet" and args.pybullet_gui:
+            wait_for_pybullet_gui_close()
 
 
 if __name__ == "__main__":
