@@ -923,10 +923,37 @@ class PyBulletSimulator(MockSimulator):
             return self.p.GEOM_BOX, [geometry.size[0] / 2.0, geometry.size[1] / 2.0, 0.001], 0.0
         return self.p.GEOM_BOX, [0.01, 0.01, 0.01], 0.0
 
+    def object_rgba_color(self, object_id: str) -> List[float]:
+        obj = self.world_model.get_object(object_id)
+        metadata = obj.metadata
+        color_name = metadata.get("color", "").lower()
+        role = metadata.get("role", "").lower()
+        object_type = obj.object_type.lower()
+
+        color_by_name = {
+            "red": [1.0, 0.2, 0.2, 1.0],
+            "green": [0.2, 0.9, 0.2, 1.0],
+            "blue": [0.2, 0.4, 1.0, 1.0],
+            "yellow": [1.0, 0.9, 0.2, 1.0],
+            "gray": [0.6, 0.6, 0.6, 1.0],
+        }
+        if color_name in color_by_name:
+            return color_by_name[color_name]
+        if "fixture" in role or "fixture" in object_type:
+            return [0.55, 0.55, 0.6, 1.0]
+        if "target" in role:
+            return [0.2, 0.8, 0.9, 1.0]
+        if "pin" in object_type:
+            return [0.95, 0.75, 0.2, 1.0]
+        if "block" in object_type:
+            return [0.9, 0.25, 0.25, 1.0]
+        return [0.75, 0.75, 0.75, 1.0]
+
     def _create_body(self, object_id: str, mass: float, collision_enabled: bool) -> int:
         obj = self.world_model.get_object(object_id)
         world_pose = self.world.object_world_poses[object_id]
         shape_type, dims, radius = self.geometry_shape(obj.geometry)
+        rgba_color = self.object_rgba_color(object_id)
 
         if shape_type == self.p.GEOM_BOX:
             collision_shape = self.p.createCollisionShape(
@@ -937,7 +964,7 @@ class PyBulletSimulator(MockSimulator):
             visual_shape = self.p.createVisualShape(
                 self.p.GEOM_BOX,
                 halfExtents=dims,
-                rgbaColor=[0.7, 0.7, 0.7, 1.0],
+                rgbaColor=rgba_color,
                 physicsClientId=self.client_id,
             )
         elif shape_type == self.p.GEOM_CYLINDER:
@@ -951,7 +978,7 @@ class PyBulletSimulator(MockSimulator):
                 self.p.GEOM_CYLINDER,
                 radius=dims[0],
                 length=dims[1],
-                rgbaColor=[0.8, 0.6, 0.3, 1.0],
+                rgbaColor=rgba_color,
                 physicsClientId=self.client_id,
             )
         else:
@@ -1141,8 +1168,15 @@ class PyBulletSimulator(MockSimulator):
         if self.world.tcp_pose_world is not None:
             tcp_position = list(self.world.tcp_pose_world["position"])
             label_position = [tcp_position[0], tcp_position[1], tcp_position[2] + 0.12]
+        attached = self.world.attached_object or "none"
+        support = self.world.last_support_object or "none"
+        tcp_z = (
+            f"{self.world.tcp_pose_world['position'][2]:.3f}"
+            if self.world.tcp_pose_world is not None
+            else "n/a"
+        )
         self.current_step_text_id = self.p.addUserDebugText(
-            f"{step.step_id}: {step.type.value}",
+            f"{step.step_id}: {step.type.value}\nattached={attached} support={support} tcp_z={tcp_z}",
             label_position,
             textColorRGB=[1.0, 0.85, 0.1],
             textSize=1.4,

@@ -1,8 +1,8 @@
 {
   "ir_version": "0.1",
-  "task_id": "task_pick_place_158dd980",
+  "task_id": "task_pick_place_8f98889e",
   "created_by": "nl_generator",
-  "created_at": "2026-03-20T04:51:08.106625+00:00",
+  "created_at": "2026-03-20T04:46:41.815719+00:00",
   "task_spec": {
     "goal": "pick_and_place",
     "command_text": "pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)",
@@ -16,7 +16,7 @@
     "robot_type": "generic_cobot",
     "arm_dof": 6,
     "has_gripper": true,
-    "tool_frame": "gripper_tcp",
+    "tool_frame": "tool0",
     "base_frame": "world",
     "motion_limits_profile": "default_cobot"
   },
@@ -62,13 +62,13 @@
         "target_object": "block_red",
         "target_feature": "block_red_top_surface",
         "approach_pose": {
-          "ref": "block_red_frame",
+          "ref": "block_red_top_surface",
           "offset": [
             0.0,
             0.0,
-            0.08
+            0.1
           ],
-          "orientation_policy": "align_with_object_top"
+          "orientation_policy": "preserve"
         }
       }
     },
@@ -85,8 +85,8 @@
       "step_id": "s4",
       "type": "retreat",
       "inputs": {
-        "direction": "tool_z_negative",
-        "distance": 0.08
+        "direction": "up",
+        "distance": 0.05
       }
     },
     {
@@ -94,13 +94,13 @@
       "type": "move_linear",
       "inputs": {
         "target_pose": {
-          "ref": "target_zone_frame",
+          "ref": "target_surface",
           "offset": [
             0.0,
             0.0,
             0.1
           ],
-          "orientation_policy": "keep_current"
+          "orientation_policy": "preserve"
         }
       }
     },
@@ -111,13 +111,13 @@
         "target_object": "block_red",
         "target_feature": "target_surface",
         "destination_pose": {
-          "ref": "target_zone_frame",
+          "ref": "target_surface",
           "offset": [
             0.0,
             0.0,
-            0.0
+            0.01
           ],
-          "orientation_policy": "align_to_target_surface"
+          "orientation_policy": "preserve"
         }
       }
     },
@@ -132,8 +132,8 @@
       "step_id": "s8",
       "type": "retreat",
       "inputs": {
-        "direction": "tool_z_negative",
-        "distance": 0.1
+        "direction": "back",
+        "distance": 0.08
       }
     }
   ],

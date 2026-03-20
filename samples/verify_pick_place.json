@@ -1,8 +1,8 @@
 {
   "ir_version": "0.1",
-  "task_id": "task_pick_place_158dd980",
+  "task_id": "task_pick_place_471a5385",
   "created_by": "nl_generator",
-  "created_at": "2026-03-20T04:51:08.106625+00:00",
+  "created_at": "2026-03-20T04:51:25.749254+00:00",
   "task_spec": {
     "goal": "pick_and_place",
     "command_text": "pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)",
