@@ -1,67 +1,94 @@
 #!/usr/bin/env python3
-# scripts/generate_and_run_rule.py
-"""
-간단 규칙 기반 자연어 -> world.json + ir.json 생성 후 run_demo로 실행하는 스크립트.
-사용 예:
-  python scripts/generate_and_run_rule.py \
-    --nl "pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)" \
-    --out-prefix sample_pick_place --pybullet-gui
+"""Generate pick/place IR and optionally run it against a world model."""
 
-옵션:
-  --nl             자연어 입력(따옴표로 묶어서 전달). 없으면 인터랙티브 입력.
-  --out-prefix     생성할 파일 접두어 (기본: sample_pick_place)
-  --no-run         생성만 하고 시뮬레이션은 실행하지 않음
-  --sim-backend    시뮬레이터 backend (기본: pybullet)
-  --pybullet-gui   pybullet GUI 사용 여부 (기본: False)
-"""
 from __future__ import annotations
 
-import re
-import json
-import uuid
-import sys
 import argparse
+import json
+import re
 import subprocess
+import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Tuple
+from typing import Any, Tuple
+
+from pydantic import ValidationError
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-# pydantic 모델(레포리의 모듈 경로 기준으로 실행)
+SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
 from ir_models import GenericCobotIR
 from world_model import WorldModel
-from datetime import datetime
+
+try:
+    from scripts import pybullet_world_utils
+except ImportError:
+    import pybullet_world_utils
+
 
 SAMPLES_DIR = ROOT_DIR / "samples"
 SAMPLES_DIR.mkdir(exist_ok=True)
 
+DEFAULT_BLOCK_POS = (0.3, 0.1, 0.02)
+DEFAULT_TARGET_POS = (0.55, 0.12, 0.01)
+REQUIRED_OBJECTS = ("block_red", "target_zone")
+REQUIRED_FEATURES = ("block_red_top_surface", "target_surface")
+REQUIRED_FRAMES = ("block_red_frame", "target_zone_frame", "home_frame")
+
+
+def print_info(message: str) -> None:
+    print(f"[INFO] {message}")
+
+
+def print_warn(message: str) -> None:
+    print(f"[WARN] {message}")
+
+
+def print_error(message: str) -> None:
+    print(f"[ERROR] {message}")
+
+
+def format_validation_error(error: ValidationError) -> str:
+    parts: list[str] = []
+    for issue in error.errors():
+        loc = ".".join(str(item) for item in issue.get("loc", []))
+        msg = issue.get("msg", "validation error")
+        parts.append(f"{loc}: {msg}")
+    return "; ".join(parts)
+
+
 def resolve_prefix(prefix: str, force: bool) -> str:
-    ipath = SAMPLES_DIR / f"{prefix}.json"
-    wpath = SAMPLES_DIR / f"{prefix}.world.json"
+    ir_path = SAMPLES_DIR / f"{prefix}.json"
+    world_path = SAMPLES_DIR / f"{prefix}.world.json"
     if force:
         return prefix
-    if not ipath.exists() and not wpath.exists():
+    if not ir_path.exists() and not world_path.exists():
         return prefix
-    # 둘 중 하나라도 존재하면 타임스탬프를 붙인 새 접두어 사용
     ts = datetime.now().strftime("%Y%m%dT%H%M%S")
     new_prefix = f"{prefix}-{ts}"
-    print(f"[INFO] '{prefix}' 파일이 이미 존재합니다. 덮어쓰지 않고 새 파일을 만듭니다: '{new_prefix}'")
+    print_info(f"'{prefix}' already exists, using '{new_prefix}' instead")
     return new_prefix
 
+
 def parse_positions(nl: str) -> list[Tuple[float, float, float]]:
-    """
-    자연어에서 (x,y,z) 또는 x,y,z 형태의 좌표들을 찾음.
-    예: "(0.3, 0.1, 0.02)" 또는 "0.3,0.1,0.02"
-    """
-    coords = re.findall(r"\(?\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\)?", nl)
+    coords = re.findall(
+        r"\(?\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\)?",
+        nl,
+    )
     return [(float(x), float(y), float(z)) for x, y, z in coords]
 
-def build_world(block_pos: Tuple[float,float,float], target_pos: Tuple[float,float,float]) -> dict:
-    """샘플 기반 간단한 world JSON 생성"""
-    world = {
+
+def default_world_dict(
+    block_pos: Tuple[float, float, float],
+    target_pos: Tuple[float, float, float],
+) -> dict[str, Any]:
+    return {
         "world_frame": "world",
         "objects": {
             "block_red": {
@@ -70,13 +97,13 @@ def build_world(block_pos: Tuple[float,float,float], target_pos: Tuple[float,flo
                 "pose": {
                     "frame": "world",
                     "position": list(block_pos),
-                    "orientation": [0.0, 0.0, 0.0, 1.0]
+                    "orientation": [0.0, 0.0, 0.0, 1.0],
                 },
                 "geometry": {"type": "box", "size": [0.04, 0.04, 0.04]},
                 "movable": True,
                 "graspable": True,
                 "collision_enabled": True,
-                "metadata": {"color": "red", "registry_id": "obj_block_red_01"}
+                "metadata": {"color": "red", "registry_id": "obj_block_red_01"},
             },
             "target_zone": {
                 "object_id": "target_zone",
@@ -84,14 +111,14 @@ def build_world(block_pos: Tuple[float,float,float], target_pos: Tuple[float,flo
                 "pose": {
                     "frame": "world",
                     "position": list(target_pos),
-                    "orientation": [0.0, 0.0, 0.0, 1.0]
+                    "orientation": [0.0, 0.0, 0.0, 1.0],
                 },
                 "geometry": {"type": "box", "size": [0.2, 0.15, 0.02]},
                 "movable": False,
                 "graspable": False,
                 "collision_enabled": True,
-                "metadata": {"role": "placement_fixture", "registry_id": "obj_target_zone_01"}
-            }
+                "metadata": {"role": "placement_fixture", "registry_id": "obj_target_zone_01"},
+            },
         },
         "features": {
             "block_red_top_surface": {
@@ -101,10 +128,10 @@ def build_world(block_pos: Tuple[float,float,float], target_pos: Tuple[float,flo
                 "local_pose": {
                     "frame": "block_red",
                     "position": [0.0, 0.0, 0.02],
-                    "orientation": [0.0, 0.0, 0.0, 1.0]
+                    "orientation": [0.0, 0.0, 0.0, 1.0],
                 },
                 "size_hint": [0.04, 0.04],
-                "metadata": {"usage": "grasp_reference_surface"}
+                "metadata": {"usage": "grasp_reference_surface"},
             },
             "target_surface": {
                 "feature_id": "target_surface",
@@ -113,11 +140,11 @@ def build_world(block_pos: Tuple[float,float,float], target_pos: Tuple[float,flo
                 "local_pose": {
                     "frame": "target_zone",
                     "position": [0.0, 0.0, 0.01],
-                    "orientation": [0.0, 0.0, 0.0, 1.0]
+                    "orientation": [0.0, 0.0, 0.0, 1.0],
                 },
                 "size_hint": [0.18, 0.12],
-                "metadata": {"usage": "flat_placement_surface"}
-            }
+                "metadata": {"usage": "flat_placement_surface"},
+            },
         },
         "frames": {
             "block_red_frame": {
@@ -126,9 +153,9 @@ def build_world(block_pos: Tuple[float,float,float], target_pos: Tuple[float,flo
                 "pose": {
                     "frame": "world",
                     "position": list(block_pos),
-                    "orientation": [0.0,0.0,0.0,1.0]
+                    "orientation": [0.0, 0.0, 0.0, 1.0],
                 },
-                "metadata": {"source":"object_pose"}
+                "metadata": {"source": "object_pose"},
             },
             "target_zone_frame": {
                 "frame_id": "target_zone_frame",
@@ -136,9 +163,9 @@ def build_world(block_pos: Tuple[float,float,float], target_pos: Tuple[float,flo
                 "pose": {
                     "frame": "world",
                     "position": list(target_pos),
-                    "orientation": [0.0,0.0,0.0,1.0]
+                    "orientation": [0.0, 0.0, 0.0, 1.0],
                 },
-                "metadata": {"source":"object_pose"}
+                "metadata": {"source": "object_pose"},
             },
             "home_frame": {
                 "frame_id": "home_frame",
@@ -146,29 +173,194 @@ def build_world(block_pos: Tuple[float,float,float], target_pos: Tuple[float,flo
                 "pose": {
                     "frame": "world",
                     "position": [0.4, 0.0, 0.3],
-                    "orientation": [0.0,0.0,0.0,1.0]
+                    "orientation": [0.0, 0.0, 0.0, 1.0],
                 },
-                "metadata": {"source":"robot_home"}
-            }
+                "metadata": {"source": "robot_home"},
+            },
         },
         "robot_state": {
             "base_frame": "world",
             "tcp_pose": {
                 "frame": "world",
                 "position": [0.4, 0.0, 0.3],
-                "orientation": [0.0, 0.0, 0.0, 1.0]
+                "orientation": [0.0, 0.0, 0.0, 1.0],
             },
             "joint_positions": [0.0, -1.2, 1.5, 0.0, 1.2, 0.0],
-            "attached_object": None
-        }
+            "attached_object": None,
+        },
     }
+
+
+def validate_world_dict(world_data: dict[str, Any]) -> WorldModel:
+    try:
+        return WorldModel.model_validate(world_data)
+    except ValidationError as error:
+        raise ValueError(f"WorldModel validation failed: {format_validation_error(error)}") from error
+
+
+def validate_ir_dict(ir_data: dict[str, Any]) -> GenericCobotIR:
+    try:
+        return GenericCobotIR.model_validate(ir_data)
+    except ValidationError as error:
+        raise ValueError(f"GenericCobotIR validation failed: {format_validation_error(error)}") from error
+
+
+def load_world_file(path: str) -> WorldModel:
+    world_path = Path(path)
+    if not world_path.exists():
+        raise FileNotFoundError(f"world file not found: {world_path}")
+    try:
+        world_data = json.loads(world_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"invalid JSON in world file '{world_path}': {error}") from error
+    world = validate_world_dict(world_data)
+    print_info(
+        f"Loaded world '{world_path}' "
+        f"(objects={len(world.objects)}, features={len(world.features)}, frames={len(world.frames)})"
+    )
     return world
 
-def build_ir(nl: str, task_suffix: str = "") -> dict:
-    """단순한 pick-and-place action_plan을 가지는 IR 생성"""
+
+def geometry_size(geometry: Any) -> list[float]:
+    geometry_type = getattr(geometry, "type", None)
+    if geometry_type == "box":
+        return list(geometry.size)
+    if geometry_type == "cylinder":
+        return [geometry.radius * 2.0, geometry.radius * 2.0, geometry.height]
+    if geometry_type == "plane":
+        return [geometry.size[0], geometry.size[1], 0.002]
+    return [0.04, 0.04, 0.04]
+
+
+def ensure_object_aliases(world: WorldModel) -> None:
+    for object_id in REQUIRED_OBJECTS:
+        if object_id not in world.objects:
+            raise ValueError(
+                f"existing world does not contain required object alias '{object_id}'. "
+                "Automatic alias guessing is disabled."
+            )
+
+
+def ensure_world_features_and_frames(
+    world: WorldModel,
+    desired_target: Tuple[float, float, float] | None = None,
+) -> WorldModel:
+    ensure_object_aliases(world)
+    world_data = world.model_dump(mode="python")
+
+    block_obj = world.get_object("block_red")
+    target_obj = world.get_object("target_zone")
+    block_size = geometry_size(block_obj.geometry)
+    target_size = geometry_size(target_obj.geometry)
+    block_registry_id = block_obj.metadata.get("registry_id")
+    target_registry_id = target_obj.metadata.get("registry_id")
+
+    if not block_registry_id or not target_registry_id:
+        raise ValueError(
+            "existing world must provide metadata.registry_id for 'block_red' and 'target_zone'"
+        )
+
+    frames = world_data.setdefault("frames", {})
+    if "block_red_frame" not in frames:
+        print_warn("existing world is missing 'block_red_frame'; generating it from object pose")
+        frames["block_red_frame"] = {
+            "frame_id": "block_red_frame",
+            "registry_path": f"{block_registry_id}/frame",
+            "pose": world_data["objects"]["block_red"]["pose"],
+            "metadata": {"source": "auto_generated_from_object"},
+        }
+    if "target_zone_frame" not in frames:
+        print_warn("existing world is missing 'target_zone_frame'; generating it from object pose")
+        frames["target_zone_frame"] = {
+            "frame_id": "target_zone_frame",
+            "registry_path": f"{target_registry_id}/frame",
+            "pose": world_data["objects"]["target_zone"]["pose"],
+            "metadata": {"source": "auto_generated_from_object"},
+        }
+    if "home_frame" not in frames:
+        print_warn("existing world is missing 'home_frame'; generating it from robot_state.tcp_pose")
+        frames["home_frame"] = {
+            "frame_id": "home_frame",
+            "registry_path": "robot/home_pose",
+            "pose": world_data["robot_state"]["tcp_pose"],
+            "metadata": {"source": "auto_generated_from_robot_state"},
+        }
+
+    features = world_data.setdefault("features", {})
+    if "block_red_top_surface" not in features:
+        print_warn("existing world is missing 'block_red_top_surface'; generating a top surface feature")
+        features["block_red_top_surface"] = {
+            "feature_id": "block_red_top_surface",
+            "parent_object": "block_red",
+            "feature_type": "surface",
+            "local_pose": {
+                "frame": "block_red",
+                "position": [0.0, 0.0, block_size[2] / 2.0],
+                "orientation": [0.0, 0.0, 0.0, 1.0],
+            },
+            "size_hint": [block_size[0], block_size[1]],
+            "metadata": {"source": "auto_generated"},
+        }
+
+    if "target_surface" not in features:
+        print_warn("existing world is missing 'target_surface'; generating a top surface feature")
+        features["target_surface"] = {
+            "feature_id": "target_surface",
+            "parent_object": "target_zone",
+            "feature_type": "surface",
+            "local_pose": {
+                "frame": "target_zone",
+                "position": [0.0, 0.0, target_size[2] / 2.0],
+                "orientation": [0.0, 0.0, 0.0, 1.0],
+            },
+            "size_hint": [target_size[0], target_size[1]],
+            "width": target_size[0],
+            "depth": target_size[2],
+            "metadata": {"source": "auto_generated"},
+        }
+
+    if desired_target is not None:
+        target_pose = world.get_object("target_zone").pose
+        local_position = [
+            desired_target[0] - target_pose.position[0],
+            desired_target[1] - target_pose.position[1],
+            desired_target[2] - target_pose.position[2],
+        ]
+        features["target_surface"]["local_pose"] = {
+            "frame": "target_zone",
+            "position": local_position,
+            "orientation": [0.0, 0.0, 0.0, 1.0],
+        }
+        print_info(
+            "Adjusted target_surface local pose from natural-language target "
+            f"to local offset {local_position}"
+        )
+
+    return validate_world_dict(world_data)
+
+
+def build_ir_from_world(
+    nl: str,
+    world: WorldModel,
+    task_suffix: str = "",
+) -> dict[str, Any]:
+    block_registry_id = world.get_object("block_red").metadata.get("registry_id")
+    target_registry_id = world.get_object("target_zone").metadata.get("registry_id")
+    if not block_registry_id or not target_registry_id:
+        raise ValueError(
+            "existing world must provide metadata.registry_id for 'block_red' and 'target_zone'"
+        )
+
     now = datetime.now(timezone.utc).isoformat()
-    task_id = f"task_pick_place_{uuid.uuid4().hex[:8]}" if not task_suffix else f"task_{task_suffix}_{uuid.uuid4().hex[:6]}"
-    ir = {
+    task_id = (
+        f"task_pick_place_{uuid.uuid4().hex[:8]}"
+        if not task_suffix
+        else f"task_{task_suffix}_{uuid.uuid4().hex[:6]}"
+    )
+    base_frame = world.robot_state.base_frame
+    tool_frame = world.robot_state.tcp_pose.frame or base_frame
+
+    return {
         "ir_version": "0.1",
         "task_id": task_id,
         "created_by": "nl_generator",
@@ -178,109 +370,259 @@ def build_ir(nl: str, task_suffix: str = "") -> dict:
             "command_text": nl,
             "priority": "normal",
             "success_condition": ["object_at_destination:block_red:target_surface"],
-            "assumptions": []
+            "assumptions": [],
         },
         "robot_profile": {
             "robot_type": "generic_cobot",
-            "arm_dof": 6,
+            "arm_dof": max(1, len(world.robot_state.joint_positions) or 6),
             "has_gripper": True,
-            "tool_frame": "gripper_tcp",
-            "base_frame": "world",
-            "motion_limits_profile": "default_cobot"
+            "tool_frame": tool_frame,
+            "base_frame": base_frame,
+            "motion_limits_profile": "default_cobot",
         },
         "world_binding": {
-            "scene_id": "sample_scene",
-            "objects": { "block_red": "obj_block_red_01", "target_zone": "obj_target_zone_01" },
-            "frames": { "block_red_frame": "obj_block_red_01/frame", "target_zone_frame": "obj_target_zone_01/frame", "home_frame":"robot/home_pose" },
+            "scene_id": "existing_world_scene",
+            "objects": {
+                "block_red": block_registry_id,
+                "target_zone": target_registry_id,
+            },
+            "frames": {
+                "block_red_frame": world.get_frame("block_red_frame").registry_path,
+                "target_zone_frame": world.get_frame("target_zone_frame").registry_path,
+                "home_frame": world.get_frame("home_frame").registry_path,
+            },
             "regions": {},
             "features": {
                 "block_red_top_surface": {
                     "parent_object": "block_red",
                     "feature_type": "surface",
                     "frame": "block_red_frame",
-                    "description":"top surface"
+                    "description": "top surface",
                 },
                 "target_surface": {
                     "parent_object": "target_zone",
                     "feature_type": "surface",
                     "frame": "target_zone_frame",
-                    "description":"placement surface"
-                }
-            }
+                    "description": "placement surface",
+                },
+            },
         },
         "action_plan": [
-            {"step_id":"s1","type":"find_object","inputs":{"object":"block_red"}},
-            {"step_id":"s2","type":"approach","inputs":{"target_object":"block_red","target_feature":"block_red_top_surface","approach_pose":{"ref":"block_red_frame","offset":[0.0,0.0,0.08],"orientation_policy":"align_with_object_top"}}},
-            {"step_id":"s3","type":"grasp","inputs":{"target_object":"block_red","target_feature":"block_red_top_surface","grasp_mode":"pinch"}},
-            {"step_id":"s4","type":"retreat","inputs":{"direction":"tool_z_negative","distance":0.08}},
-            {"step_id":"s5","type":"move_linear","inputs":{"target_pose":{"ref":"target_zone_frame","offset":[0.0,0.0,0.1],"orientation_policy":"keep_current"}}},
-            {"step_id":"s6","type":"place","inputs":{"target_object":"block_red","target_feature":"target_surface","destination_pose":{"ref":"target_zone_frame","offset":[0.0,0.0,0.0],"orientation_policy":"align_to_target_surface"}}},
-            {"step_id":"s7","type":"release","inputs":{"target_object":"block_red"}},
-            {"step_id":"s8","type":"retreat","inputs":{"direction":"tool_z_negative","distance":0.1}}
+            {"step_id": "s1", "type": "find_object", "inputs": {"object": "block_red"}},
+            {
+                "step_id": "s2",
+                "type": "approach",
+                "inputs": {
+                    "target_object": "block_red",
+                    "target_feature": "block_red_top_surface",
+                    "approach_pose": {
+                        "ref": "block_red_frame",
+                        "offset": [0.0, 0.0, 0.08],
+                        "orientation_policy": "align_with_object_top",
+                    },
+                },
+            },
+            {
+                "step_id": "s3",
+                "type": "grasp",
+                "inputs": {
+                    "target_object": "block_red",
+                    "target_feature": "block_red_top_surface",
+                    "grasp_mode": "pinch",
+                },
+            },
+            {"step_id": "s4", "type": "retreat", "inputs": {"direction": "tool_z_negative", "distance": 0.08}},
+            {
+                "step_id": "s5",
+                "type": "move_linear",
+                "inputs": {
+                    "target_pose": {
+                        "ref": "target_zone_frame",
+                        "offset": [0.0, 0.0, 0.1],
+                        "orientation_policy": "keep_current",
+                    }
+                },
+            },
+            {
+                "step_id": "s6",
+                "type": "place",
+                "inputs": {
+                    "target_object": "block_red",
+                    "target_feature": "target_surface",
+                    "destination_pose": {
+                        "ref": "target_zone_frame",
+                        "offset": [0.0, 0.0, 0.0],
+                        "orientation_policy": "align_to_target_surface",
+                    },
+                },
+            },
+            {"step_id": "s7", "type": "release", "inputs": {"target_object": "block_red"}},
+            {"step_id": "s8", "type": "retreat", "inputs": {"direction": "tool_z_negative", "distance": 0.1}},
         ],
-        "verification_policy":{"collision_check":True,"ik_check":True,"joint_limit_check":True,"velocity_limit_check":True,"force_limit_check":False,"max_retry":3,"acceptance_rules":[]},
-        "repair_state": {"retry_count":0,"last_error":None,"repair_history":[]}
+        "verification_policy": {
+            "collision_check": True,
+            "ik_check": True,
+            "joint_limit_check": True,
+            "velocity_limit_check": True,
+            "force_limit_check": False,
+            "max_retry": 3,
+            "acceptance_rules": [],
+        },
+        "repair_state": {"retry_count": 0, "last_error": None, "repair_history": []},
     }
-    return ir
 
-def save_and_validate(world: dict, ir: dict, prefix: str) -> tuple[str,str]:
-    """Pydantic으로 검증 후 files 저장(덮어쓰기)"""
-    wpath = SAMPLES_DIR / f"{prefix}.world.json"
-    ipath = SAMPLES_DIR / f"{prefix}.json"
-    # 검증(ValidationError 발생 시 예외 전파)
-    WorldModel.model_validate(world)
-    GenericCobotIR.model_validate(ir)
-    wpath.write_text(json.dumps(world, indent=2, ensure_ascii=False), encoding="utf-8")
-    ipath.write_text(json.dumps(ir, indent=2, ensure_ascii=False), encoding="utf-8")
-    return str(ipath), str(wpath)
 
-def run_sim(ir_path: str, sim_backend: str = "pybullet", gui: bool = False, step_wait: bool = False) -> None:
-    cmd = [sys.executable, str(ROOT_DIR / "run_demo.py"), "--sample", ir_path, "--sim-backend", sim_backend]
+def save_world_model(world: WorldModel, path: Path) -> str:
+    path.write_text(json.dumps(world.model_dump(mode="json"), indent=2, ensure_ascii=False), encoding="utf-8")
+    print_info(f"Saved WorldModel JSON: {path}")
+    return str(path)
+
+
+def save_ir_model(ir: GenericCobotIR, path: Path) -> str:
+    path.write_text(json.dumps(ir.model_dump(mode="json"), indent=2, ensure_ascii=False), encoding="utf-8")
+    print_info(f"Saved GenericCobotIR JSON: {path}")
+    return str(path)
+
+
+def print_world_binding_summary(ir: GenericCobotIR) -> None:
+    print_info(
+        "IR world_binding summary: "
+        f"objects={dict(ir.world_binding.objects)} "
+        f"frames={dict(ir.world_binding.frames)} "
+        f"features={list(ir.world_binding.features.keys())}"
+    )
+
+
+def run_sim(
+    ir_path: str,
+    world_path: str | None,
+    sim_backend: str = "pybullet",
+    gui: bool = False,
+    step_wait: bool = False,
+) -> None:
+    cmd = [
+        sys.executable,
+        str(ROOT_DIR / "run_demo.py"),
+        "--sample",
+        ir_path,
+        "--sim-backend",
+        sim_backend,
+    ]
+    if world_path is not None:
+        cmd.extend(["--world", world_path])
     if gui:
         cmd.append("--pybullet-gui")
     if step_wait:
         cmd.append("--pybullet-step-wait")
+    print_info(f"Running simulation command: {' '.join(cmd)}")
     subprocess.run(cmd, check=True, cwd=ROOT_DIR)
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--nl", type=str, default=None, help="자연어 입력 (예: 'pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)')")
-    parser.add_argument("--out-prefix", type=str, default="sample_pick_place", help="저장할 파일 접두어")
-    parser.add_argument("--no-run", action="store_true", help="생성만 하고 시뮬레이션은 실행하지 않음")
-    parser.add_argument("--sim-backend", type=str, default="pybullet", choices=["pybullet","mock"], help="시뮬레이터 백엔드")
-    parser.add_argument("--pybullet-gui", action="store_true", help="pybullet GUI 사용")
-    parser.add_argument("--force", action="store_true", help="기존 파일이 있어도 강제로 덮어씀")
-    parser.add_argument("--step-by-step", action="store_true", help="PyBullet GUI에서 각 스텝마다 Enter를 눌러 진행")
-    args = parser.parse_args()
+
+def export_world_from_pybullet(prefix: str) -> WorldModel:
+    export_path = SAMPLES_DIR / f"{prefix}.exported.world.json"
+    print_info(f"Exporting current PyBullet session to {export_path}")
+    exported = pybullet_world_utils.export_world_model(str(export_path))
+    return load_world_file(exported)
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Generate pick/place IR and optionally run it")
+    parser.add_argument(
+        "--nl",
+        type=str,
+        default=None,
+        help="Natural-language command, e.g. 'pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)'",
+    )
+    parser.add_argument("--out-prefix", type=str, default="sample_pick_place", help="Output file prefix")
+    parser.add_argument("--no-run", action="store_true", help="Generate JSON files only")
+    parser.add_argument("--sim-backend", type=str, default="pybullet", choices=["pybullet", "mock"], help="Simulator backend")
+    parser.add_argument("--pybullet-gui", action="store_true", help="Enable PyBullet GUI")
+    parser.add_argument("--force", action="store_true", help="Overwrite existing output filenames")
+    parser.add_argument("--step-by-step", action="store_true", help="Wait for Enter between PyBullet steps")
+    parser.add_argument("--existing-world", type=str, default=None, help="Use an existing WorldModel JSON file")
+    parser.add_argument(
+        "--world-from-pybullet",
+        action="store_true",
+        help="Export the current PyBullet session to WorldModel JSON and use it as the world",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    if args.existing_world and args.world_from_pybullet:
+        print_error("Use either --existing-world or --world-from-pybullet, not both")
+        return 2
+    if args.step_by_step and not args.pybullet_gui:
+        print_warn("--step-by-step has effect only with --pybullet-gui")
 
     if args.nl:
         nl_text = args.nl
     else:
-        nl_text = input("자연어 입력 (예: pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)):\n")
+        nl_text = input(
+            "Natural-language command (example: pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)):\n"
+        )
 
     coords = parse_positions(nl_text)
-    if len(coords) >= 2:
-        block_pos, target_pos = coords[0], coords[1]
-    else:
-        print("좌표가 충분히 추출되지 않아 기본값 사용합니다.")
-        block_pos = (0.3,0.1,0.02)
-        target_pos = (0.55,0.12,0.01)
+    desired_block = coords[0] if len(coords) >= 1 else DEFAULT_BLOCK_POS
+    desired_target = coords[1] if len(coords) >= 2 else DEFAULT_TARGET_POS
+    if len(coords) < 2:
+        print_warn(
+            "Could not extract two coordinate triples from input; using default target "
+            f"{DEFAULT_TARGET_POS}"
+        )
 
-    world = build_world(block_pos, target_pos)
-    ir = build_ir(nl_text)
-    prefix = args.out_prefix
+    prefix = resolve_prefix(args.out_prefix, force=args.force)
 
     try:
-        # 기존: prefix = args.out_prefix
-        prefix = resolve_prefix(args.out_prefix, force=args.force)
-        ir_path, world_path = save_and_validate(world, ir, prefix)
-        print(f"생성 및 검증 완료: {ir_path}, {world_path}")
-    except Exception as e:
-        print("검증 실패:", e)
+        if args.world_from_pybullet:
+            base_world = export_world_from_pybullet(prefix)
+        elif args.existing_world:
+            base_world = load_world_file(args.existing_world)
+        else:
+            print_info("No existing world provided; generating a new default world")
+            base_world = validate_world_dict(default_world_dict(desired_block, desired_target))
+
+        using_existing_world = args.world_from_pybullet or args.existing_world is not None
+        if using_existing_world:
+            print_info("Using existing world data; skipping default world generation")
+            world_model = ensure_world_features_and_frames(base_world, desired_target=desired_target)
+        else:
+            world_model = base_world
+
+        ir_data = build_ir_from_world(nl_text, world_model)
+        ir_model = validate_ir_dict(ir_data)
+
+        world_path = save_world_model(world_model, SAMPLES_DIR / f"{prefix}.world.json")
+        ir_path = save_ir_model(ir_model, SAMPLES_DIR / f"{prefix}.json")
+
+        print_info(
+            f"Validation complete: objects={len(world_model.objects)}, "
+            f"features={len(world_model.features)}, frames={len(world_model.frames)}"
+        )
+        print_world_binding_summary(ir_model)
+    except (FileNotFoundError, ValueError, RuntimeError) as error:
+        print_error(str(error))
+        return 1
+    except Exception as error:
+        print_error(f"Unexpected failure: {error}")
         raise
 
     if not args.no_run:
-        run_sim(ir_path, sim_backend=args.sim_backend, gui=args.pybullet_gui, step_wait=args.step_by_step)
+        try:
+            run_sim(
+                ir_path,
+                world_path=world_path,
+                sim_backend=args.sim_backend,
+                gui=args.pybullet_gui,
+                step_wait=args.step_by_step,
+            )
+        except subprocess.CalledProcessError as error:
+            print_error(f"run_demo.py exited with status {error.returncode}")
+            return error.returncode or 1
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

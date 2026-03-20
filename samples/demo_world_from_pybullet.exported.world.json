@@ -1,0 +1,215 @@
+{
+  "world_frame": "world",
+  "objects": {
+    "block_red": {
+      "object_id": "block_red",
+      "object_type": "block",
+      "pose": {
+        "frame": "world",
+        "position": [
+          0.3,
+          0.1,
+          0.02
+        ],
+        "orientation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "geometry": {
+        "type": "box",
+        "size": [
+          0.04,
+          0.04,
+          0.04
+        ]
+      },
+      "movable": true,
+      "graspable": true,
+      "collision_enabled": true,
+      "metadata": {
+        "registry_id": "obj_block_red_01",
+        "rgba": "1.0,0.0,0.0,1.0"
+      }
+    },
+    "target_zone": {
+      "object_id": "target_zone",
+      "object_type": "fixture",
+      "pose": {
+        "frame": "world",
+        "position": [
+          0.55,
+          0.12,
+          0.01
+        ],
+        "orientation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "geometry": {
+        "type": "box",
+        "size": [
+          0.2,
+          0.15,
+          0.02
+        ]
+      },
+      "movable": false,
+      "graspable": false,
+      "collision_enabled": true,
+      "metadata": {
+        "registry_id": "obj_target_zone_01",
+        "rgba": "0.3,0.3,0.3,1.0"
+      }
+    }
+  },
+  "features": {
+    "block_red_top_surface": {
+      "feature_id": "block_red_top_surface",
+      "parent_object": "block_red",
+      "feature_type": "surface",
+      "local_pose": {
+        "frame": "block_red",
+        "position": [
+          0.0,
+          0.0,
+          0.02
+        ],
+        "orientation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "size_hint": [
+        0.04,
+        0.04
+      ],
+      "axis": null,
+      "depth": null,
+      "width": null,
+      "metadata": {
+        "source": "pybullet_export"
+      }
+    },
+    "target_surface": {
+      "feature_id": "target_surface",
+      "parent_object": "target_zone",
+      "feature_type": "surface",
+      "local_pose": {
+        "frame": "target_zone",
+        "position": [
+          0.0,
+          0.0,
+          0.01
+        ],
+        "orientation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "size_hint": [
+        0.2,
+        0.15
+      ],
+      "axis": null,
+      "depth": null,
+      "width": null,
+      "metadata": {
+        "source": "pybullet_export"
+      }
+    }
+  },
+  "frames": {
+    "block_red_frame": {
+      "frame_id": "block_red_frame",
+      "registry_path": "obj_block_red_01/frame",
+      "pose": {
+        "frame": "world",
+        "position": [
+          0.3,
+          0.1,
+          0.02
+        ],
+        "orientation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "metadata": {
+        "source": "pybullet_export"
+      }
+    },
+    "target_zone_frame": {
+      "frame_id": "target_zone_frame",
+      "registry_path": "obj_target_zone_01/frame",
+      "pose": {
+        "frame": "world",
+        "position": [
+          0.55,
+          0.12,
+          0.01
+        ],
+        "orientation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "metadata": {
+        "source": "pybullet_export"
+      }
+    },
+    "home_frame": {
+      "frame_id": "home_frame",
+      "registry_path": "robot/home_pose",
+      "pose": {
+        "frame": "world",
+        "position": [
+          0.4,
+          0.0,
+          0.3
+        ],
+        "orientation": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ]
+      },
+      "metadata": {
+        "source": "pybullet_export"
+      }
+    }
+  },
+  "robot_state": {
+    "base_frame": "world",
+    "tcp_pose": {
+      "frame": "world",
+      "position": [
+        0.4,
+        0.0,
+        0.3
+      ],
+      "orientation": [
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    "joint_positions": [],
+    "attached_object": null
+  }
+}
