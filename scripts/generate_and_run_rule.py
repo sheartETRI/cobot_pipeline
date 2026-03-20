@@ -54,6 +54,10 @@ def print_error(message: str) -> None:
     print(f"[ERROR] {message}")
 
 
+def print_auto_fill(name: str, reason: str, payload: dict[str, Any]) -> None:
+    print_info(f"Auto-generated '{name}' from {reason}: {json.dumps(payload, ensure_ascii=False)}")
+
+
 def format_validation_error(error: ValidationError) -> str:
     parts: list[str] = []
     for issue in error.errors():
@@ -262,34 +266,39 @@ def ensure_world_features_and_frames(
 
     frames = world_data.setdefault("frames", {})
     if "block_red_frame" not in frames:
-        print_warn("existing world is missing 'block_red_frame'; generating it from object pose")
-        frames["block_red_frame"] = {
+        frame_payload = {
             "frame_id": "block_red_frame",
             "registry_path": f"{block_registry_id}/frame",
             "pose": world_data["objects"]["block_red"]["pose"],
             "metadata": {"source": "auto_generated_from_object"},
         }
+        print_warn("existing world is missing 'block_red_frame'; generating it from object pose")
+        print_auto_fill("block_red_frame", "object pose", frame_payload)
+        frames["block_red_frame"] = frame_payload
     if "target_zone_frame" not in frames:
-        print_warn("existing world is missing 'target_zone_frame'; generating it from object pose")
-        frames["target_zone_frame"] = {
+        frame_payload = {
             "frame_id": "target_zone_frame",
             "registry_path": f"{target_registry_id}/frame",
             "pose": world_data["objects"]["target_zone"]["pose"],
             "metadata": {"source": "auto_generated_from_object"},
         }
+        print_warn("existing world is missing 'target_zone_frame'; generating it from object pose")
+        print_auto_fill("target_zone_frame", "object pose", frame_payload)
+        frames["target_zone_frame"] = frame_payload
     if "home_frame" not in frames:
-        print_warn("existing world is missing 'home_frame'; generating it from robot_state.tcp_pose")
-        frames["home_frame"] = {
+        frame_payload = {
             "frame_id": "home_frame",
             "registry_path": "robot/home_pose",
             "pose": world_data["robot_state"]["tcp_pose"],
             "metadata": {"source": "auto_generated_from_robot_state"},
         }
+        print_warn("existing world is missing 'home_frame'; generating it from robot_state.tcp_pose")
+        print_auto_fill("home_frame", "robot_state.tcp_pose", frame_payload)
+        frames["home_frame"] = frame_payload
 
     features = world_data.setdefault("features", {})
     if "block_red_top_surface" not in features:
-        print_warn("existing world is missing 'block_red_top_surface'; generating a top surface feature")
-        features["block_red_top_surface"] = {
+        feature_payload = {
             "feature_id": "block_red_top_surface",
             "parent_object": "block_red",
             "feature_type": "surface",
@@ -301,10 +310,12 @@ def ensure_world_features_and_frames(
             "size_hint": [block_size[0], block_size[1]],
             "metadata": {"source": "auto_generated"},
         }
+        print_warn("existing world is missing 'block_red_top_surface'; generating a top surface feature")
+        print_auto_fill("block_red_top_surface", "block_red geometry top face", feature_payload)
+        features["block_red_top_surface"] = feature_payload
 
     if "target_surface" not in features:
-        print_warn("existing world is missing 'target_surface'; generating a top surface feature")
-        features["target_surface"] = {
+        feature_payload = {
             "feature_id": "target_surface",
             "parent_object": "target_zone",
             "feature_type": "surface",
@@ -318,6 +329,9 @@ def ensure_world_features_and_frames(
             "depth": target_size[2],
             "metadata": {"source": "auto_generated"},
         }
+        print_warn("existing world is missing 'target_surface'; generating a top surface feature")
+        print_auto_fill("target_surface", "target_zone geometry top face", feature_payload)
+        features["target_surface"] = feature_payload
 
     if desired_target is not None:
         target_pose = world.get_object("target_zone").pose

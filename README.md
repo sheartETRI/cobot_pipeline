@@ -1,131 +1,184 @@
-# Cobot Pipeline Feature Pick/Place World Load Patch
+# Cobot Pipeline
 
-이 저장소는 코봇 작업 IR(`GenericCobotIR`)에 대해 간단한 실행/검증을 수행하고, 별도 `world model`을 로드해 객체, feature, frame 정보를 함께 검증하는 예제 코드입니다.
-
-최근 작업에서 추가된 핵심은 다음 두 가지입니다.
-
-- `world_model.py` 기반의 명시적 월드 모델
-- `frames` 레지스트리 추가
-  - `home_frame`
-  - `*_frame` 형태의 object / feature / waypoint frame
+이 저장소는 코봇 작업 IR(`GenericCobotIR`)과 월드 모델(`WorldModel`)을 생성, 검증, 실행하는 예제 코드다. 현재는 기본 샘플 월드 생성뿐 아니라 기존 월드 재사용, PyBullet 세션에서의 월드 export, step-by-step 실행까지 지원한다.
 
 ## 주요 파일
 
-- `world_model.py`
-  - 월드 모델 스키마
-  - `objects`, `features`, `frames`, `robot_state` 정의
-- `ir_models.py`
-  - IR 스키마 정의
-- `executor.py`
-  - mock simulator 기반 IR 실행기
-- `run_demo.py`
-  - 샘플 IR / world 파일 로드 및 실행
-- `test_world_model.py`
-  - 샘플 world JSON 로딩 확인용 간단 테스트 스크립트
-- `tests/test_world_integration.py`
-  - world model 연동 테스트
-- `samples/`
-  - 샘플 IR 및 world JSON
+- `ir_models.py`: IR 스키마
+- `world_model.py`: WorldModel 스키마
+- `executor.py`: mock / PyBullet 실행기
+- `run_demo.py`: IR + world 로드, 일관성 검사, 실행
+- `scripts/generate_and_run_rule.py`: 자연어로 IR 생성 및 실행
+- `scripts/pybullet_world_utils.py`: PyBullet 장면 구성 및 WorldModel export
+- `tests/test_world_integration.py`: world/IR 통합 테스트
+- `tests/test_pybullet_world_export.py`: PyBullet export 및 existing-world 연동 테스트
 
-## world model 구조
+## 지원 흐름
 
-`WorldModel`은 아래 정보를 가집니다.
-
-- `world_frame`
-- `objects`
-  - 월드에 존재하는 물체의 pose / geometry
-- `features`
-  - object에 종속된 surface / slot / pocket / hole / grasp_region
-- `frames`
-  - 명시적 frame registry
-  - 예: `block_red_frame`, `target_zone_frame`, `pin_frame`, `hole_frame`, `pre_insert_frame`, `home_frame`
-- `robot_state`
-  - `base_frame`, `tcp_pose`, `joint_positions`, `attached_object`
-
-`frames`는 IR의 `world_binding.frames`와 직접 대응시키기 위한 용도입니다.
-기존처럼 object / feature만으로 간접적으로 frame을 추론하지 않고, 월드 파일 안에서 frame을 명시적으로 선언합니다.
-
-## 샘플 데이터
-
-현재 샘플 world 파일에는 frame registry가 포함되어 있습니다.
-
-- `samples/sample_pick_place.world.json`
-  - `block_red_frame`
-  - `target_zone_frame`
-  - `home_frame`
-- `samples/sample_insert.world.json`
-  - `pin_frame`
-  - `hole_frame`
-  - `pre_insert_frame`
-
-## 실행 환경
-
-권장 환경:
-
-- Python 3.10+
-- `pydantic`
-
-필요 시 기본 패키지 설치:
+### 1. 기본 world 생성 후 IR 생성/실행
 
 ```bash
-pip install pydantic pytest
+python scripts/generate_and_run_rule.py \
+  --nl "pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)" \
+  --out-prefix sample_pick_place \
+  --sim-backend pybullet \
+  --pybullet-gui
 ```
 
-### 실행 방법
+### 2. 기존 WorldModel JSON 사용
 
-# 1. world model 로딩 확인
+```bash
+python scripts/generate_and_run_rule.py \
+  --nl "pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)" \
+  --existing-world samples/pybullet_exported_world.json \
+  --out-prefix sample_pick_place \
+  --sim-backend pybullet \
+  --pybullet-gui
+```
 
-샘플 world JSON이 정상적으로 파싱되는지 확인합니다.
+이 경우 `build_world()`는 건너뛰고 기존 world의 object/frame/feature를 기준으로 `world_binding`을 채운다.
 
-python test_world_model.py
-확인 내용:
+필수 alias:
 
-샘플 world 파일 로딩
-object / feature / frame 목록 출력
-robot tcp 정보 출력
+- `block_red`
+- `target_zone`
 
-# 2. 샘플 데모 실행
+권장 frame / feature:
 
-IR와 world model을 함께 로드해 mock executor를 실행합니다.
+- `block_red_frame`
+- `target_zone_frame`
+- `home_frame`
+- `block_red_top_surface`
+- `target_surface`
 
-python run_demo.py
-확인 내용:
+누락된 frame / feature는 경고 후 자동 보강한다. 자동 추정으로 다른 object alias를 매칭하지는 않는다. 즉 `block_red` 또는 `target_zone` alias가 없으면 에러로 종료한다.
 
-샘플 IR 로딩
-대응되는 \*.world.json 자동 탐색
-IR와 world model consistency check
-step-by-step 실행 결과 출력
-verification result JSON 출력
+### 3. 현재 PyBullet 세션에서 world export 후 사용
 
-# 3. 통합 테스트 실행
+같은 프로세스에서 직접 호출하는 방식:
 
-pytest 기반 테스트를 실행합니다.
+```python
+from scripts.pybullet_world_utils import connect, create_box, create_fixture_box, add_feature
+from scripts.generate_and_run_rule import main
 
-전체 테스트:
+connect(gui=False)
+create_box("obj_block_red_01", (0.3, 0.1, 0.02))
+create_fixture_box("obj_target_zone_01", (0.55, 0.12, 0.01))
+add_feature("block_red_top_surface", "obj_block_red_01", (0.0, 0.0, 0.02), size_hint=[0.04, 0.04])
+add_feature("target_surface", "obj_target_zone_01", (0.0, 0.0, 0.01), size_hint=[0.2, 0.15])
 
-pytest
-world integration 테스트만 실행:
+main([
+    "--nl", "pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)",
+    "--world-from-pybullet",
+    "--out-prefix", "sample_pick_place",
+    "--sim-backend", "mock",
+    "--force",
+])
+```
 
-pytest tests/test_world_integration.py
-현재 검증 포인트
-현재 코드 기준으로 다음 항목을 확인할 수 있습니다.
+CLI 예시:
 
-world JSON이 WorldModel 스키마에 맞게 로딩되는지
-feature가 유효한 parent object를 참조하는지
-frame registry의 key와 frame_id가 일치하는지
-frame의 부모 참조(pose.frame)가 유효한 world / object / feature / frame 인지
-IR의 world_binding.frames가 world.frames와 일치하는지
-샘플 pick/place 및 insert 시나리오가 mock executor에서 실행 가능한지
+```bash
+python -c "from scripts.pybullet_world_utils import connect, create_box, create_fixture_box, add_feature; connect(gui=True); create_box('obj_block_red_01', (0.3,0.1,0.02)); create_fixture_box('obj_target_zone_01', (0.55,0.12,0.01)); add_feature('block_red_top_surface', 'obj_block_red_01', (0,0,0.02), size_hint=[0.04,0.04]); add_feature('target_surface', 'obj_target_zone_01', (0,0,0.01), size_hint=[0.2,0.15]); input('Press Enter to keep the session alive...')"
+python scripts/generate_and_run_rule.py \
+  --nl "pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)" \
+  --world-from-pybullet \
+  --out-prefix sample_pick_place \
+  --sim-backend pybullet \
+  --pybullet-gui
+```
 
-# 빠른 시작
+## `generate_and_run_rule.py` 옵션
 
-가장 빠른 확인 순서는 아래와 같습니다.
+- `--nl <text>`: 자연어 명령
+- `--out-prefix <name>`: 출력 파일 prefix
+- `--no-run`: JSON만 생성
+- `--sim-backend {mock,pybullet}`: 실행 백엔드
+- `--pybullet-gui`: PyBullet GUI 사용
+- `--step-by-step`: PyBullet GUI에서 각 primitive step마다 Enter 입력 후 진행
+- `--existing-world <path>`: 기존 `WorldModel` JSON 사용
+- `--world-from-pybullet`: 현재 PyBullet 세션에서 world export 후 사용
+- `--force`: 기존 출력 파일 덮어쓰기
 
-python test_world_model.py
-python run_demo.py
-pytest tests/test_world_integration.py
+스크립트는 항상 다음 순서로 검증/실행한다.
 
-참고
-run_demo.py는 world 파일이 없는 샘플에 대해서는 IR만으로도 실행합니다.
-world consistency check는 현재 world.frames를 기준으로 frame alias를 검증합니다.
-frame registry를 확장할 때는 samples/\*.world.json에도 대응 frame을 같이 추가하는 것이 좋습니다.
+1. `WorldModel.model_validate(...)`
+2. `GenericCobotIR.model_validate(...)`
+3. `run_demo.py --sample <ir> --world <world>`
+
+최종 object / frame / feature 일관성 검사는 `run_demo.py`의 `validate_ir_world_consistency()`가 다시 수행한다.
+
+## `pybullet_world_utils.py`
+
+제공 함수:
+
+- `connect(gui: bool = True) -> int`
+- `create_box(...) -> int`
+- `create_fixture_box(...) -> int`
+- `add_feature(...) -> None`
+- `export_world_model(path: str = "pybullet_exported_world.json", world_frame: str = "world") -> str`
+
+export 시 다음을 포함한다.
+
+- object `metadata.registry_id`
+- object pose / geometry / movable / graspable / collision_enabled
+- feature local pose
+- frame registry
+- robot_state
+- `WorldModel` 검증 후 JSON 저장
+
+registry가 없는 body는 `auto_obj_<body_id>`로 export하며 경고를 남긴다.
+
+## 자연어 좌표 처리
+
+자연어에서 좌표가 추출되면:
+
+- 기본 world 생성 모드에서는 object pose를 해당 좌표로 생성한다.
+- 기존 world 사용 모드에서는 object의 실제 pose는 유지한다.
+- 대신 target 관련 feature local pose를 조정해 placement 기준점을 반영한다.
+
+## 주의사항 / 현재 제약
+
+### `--world-from-pybullet` 세션 의존성
+
+현재 구현은 동일 프로세스의 active PyBullet 연결 또는 shared-memory 세션이 있어야 한다. 별도 GUI 프로세스에서 생성된 일반 세션을 다른 프로세스가 그대로 읽는 흐름은 기본 지원하지 않는다.
+
+실무적으로는 다음 방식으로 확장 가능하다.
+
+- `p.connect(p.SHARED_MEMORY)` 기반 exporter / consumer 구성
+- 별도 exporter 프로세스가 world JSON을 저장하고, generator는 그 JSON만 읽는 구조
+
+### 자동 보강 로직의 보수성
+
+기존 world에 필요한 frame / feature가 없으면 자동 보강한다. 이 동작은 편리하지만 잘못된 보강이 실제 일관성 문제를 가릴 수 있다.
+
+현재는 보강 시 다음 정보를 로그로 남긴다.
+
+- 생성한 항목 이름
+- 생성 근거
+- 생성 payload 전체
+
+운영 환경에서는 이 로그를 확인해 자동 보강 결과가 기대와 맞는지 검토하는 것이 좋다.
+
+### 객체 alias 불일치 처리 정책
+
+현재는 자동 추정 없이 에러를 낸다. 운영 환경에서 alias 명칭이 자주 다르다면, 향후 명시적 매핑 파일(YAML/JSON)을 받아 처리하는 옵션을 추가하는 것이 적절하다.
+
+### PyBullet 연결 종료 처리
+
+현재는 `--world-from-pybullet` export 후 연결 종료 여부를 CLI에서 선택할 수 없다. GUI 유지/종료 시나리오를 모두 다루려면 향후 `--detach-after-export` 같은 플래그를 추가하는 것이 자연스럽다.
+
+## 테스트
+
+```bash
+pytest tests/test_world_integration.py tests/test_pybullet_world_export.py
+```
+
+현재 검증 항목:
+
+- sample world/IR 실행
+- registry_id 누락 및 mismatch 처리
+- collision 검출
+- simulator backend fallback
+- PyBullet world export 후 `WorldModel` 검증
+- `--world-from-pybullet` 경로에서 IR 생성 및 `run_demo.py` 연동
