@@ -1,10 +1,12 @@
 import json
 from pathlib import Path
+
+from sample_paths import world_sample_path
 from world_model import WorldModel
 
 for path in [
-    "samples/sample_pick_place.world.json",
-    "samples/sample_insert.world.json",
+    str(world_sample_path("sample_pick_place")),
+    str(world_sample_path("sample_insert")),
 ]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     wm = WorldModel.model_validate(data)

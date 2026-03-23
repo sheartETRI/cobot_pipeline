@@ -5,6 +5,7 @@ import pytest
 
 from ir_models import GenericCobotIR
 from run_demo import validate_ir_world_consistency
+from sample_paths import exported_world_sample_path, ir_sample_path, world_sample_path
 from scripts import generate_and_run_rule as generator
 from scripts import pybullet_world_utils
 from world_model import WorldModel
@@ -65,9 +66,9 @@ def test_generate_and_run_with_world_from_pybullet(tmp_path: Path):
 
     assert result == 0
 
-    ir_path = Path("samples") / f"{prefix}.json"
-    world_path = Path("samples") / f"{prefix}.world.json"
-    exported_path = Path("samples") / f"{prefix}.exported.world.json"
+    ir_path = ir_sample_path(prefix)
+    world_path = world_sample_path(prefix)
+    exported_path = exported_world_sample_path(prefix)
 
     assert ir_path.exists()
     assert world_path.exists()

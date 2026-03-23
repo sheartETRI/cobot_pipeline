@@ -1,8 +1,8 @@
 {
   "ir_version": "0.1",
-  "task_id": "task_pick_place_3fd4b21c",
+  "task_id": "task_pick_place_d3231bd2",
   "created_by": "nl_generator",
-  "created_at": "2026-03-20T04:47:35.271596+00:00",
+  "created_at": "2026-03-20T07:33:39.621574Z",
   "task_spec": {
     "goal": "pick_and_place",
     "command_text": "pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)",
@@ -16,12 +16,12 @@
     "robot_type": "generic_cobot",
     "arm_dof": 6,
     "has_gripper": true,
-    "tool_frame": "tool0",
+    "tool_frame": "world",
     "base_frame": "world",
     "motion_limits_profile": "default_cobot"
   },
   "world_binding": {
-    "scene_id": "sample_scene",
+    "scene_id": "existing_world_scene",
     "objects": {
       "block_red": "obj_block_red_01",
       "target_zone": "obj_target_zone_01"
@@ -53,7 +53,11 @@
       "type": "find_object",
       "inputs": {
         "object": "block_red"
-      }
+      },
+      "constraints": {},
+      "expected_effects": [],
+      "on_failure": {},
+      "status": "planned"
     },
     {
       "step_id": "s2",
@@ -62,15 +66,19 @@
         "target_object": "block_red",
         "target_feature": "block_red_top_surface",
         "approach_pose": {
-          "ref": "block_red_top_surface",
+          "ref": "block_red_frame",
           "offset": [
             0.0,
             0.0,
-            0.1
+            0.08
           ],
-          "orientation_policy": "preserve"
+          "orientation_policy": "align_with_object_top"
         }
-      }
+      },
+      "constraints": {},
+      "expected_effects": [],
+      "on_failure": {},
+      "status": "planned"
     },
     {
       "step_id": "s3",
@@ -79,30 +87,42 @@
         "target_object": "block_red",
         "target_feature": "block_red_top_surface",
         "grasp_mode": "pinch"
-      }
+      },
+      "constraints": {},
+      "expected_effects": [],
+      "on_failure": {},
+      "status": "planned"
     },
     {
       "step_id": "s4",
       "type": "retreat",
       "inputs": {
-        "direction": "up",
-        "distance": 0.05
-      }
+        "direction": "tool_z_negative",
+        "distance": 0.08
+      },
+      "constraints": {},
+      "expected_effects": [],
+      "on_failure": {},
+      "status": "planned"
     },
     {
       "step_id": "s5",
       "type": "move_linear",
       "inputs": {
         "target_pose": {
-          "ref": "target_surface",
+          "ref": "target_zone_frame",
           "offset": [
             0.0,
             0.0,
             0.1
           ],
-          "orientation_policy": "preserve"
+          "orientation_policy": "keep_current"
         }
-      }
+      },
+      "constraints": {},
+      "expected_effects": [],
+      "on_failure": {},
+      "status": "planned"
     },
     {
       "step_id": "s6",
@@ -111,30 +131,42 @@
         "target_object": "block_red",
         "target_feature": "target_surface",
         "destination_pose": {
-          "ref": "target_surface",
+          "ref": "target_zone_frame",
           "offset": [
             0.0,
             0.0,
-            0.01
+            0.0
           ],
-          "orientation_policy": "preserve"
+          "orientation_policy": "align_to_target_surface"
         }
-      }
+      },
+      "constraints": {},
+      "expected_effects": [],
+      "on_failure": {},
+      "status": "planned"
     },
     {
       "step_id": "s7",
       "type": "release",
       "inputs": {
         "target_object": "block_red"
-      }
+      },
+      "constraints": {},
+      "expected_effects": [],
+      "on_failure": {},
+      "status": "planned"
     },
     {
       "step_id": "s8",
       "type": "retreat",
       "inputs": {
-        "direction": "back",
-        "distance": 0.08
-      }
+        "direction": "tool_z_negative",
+        "distance": 0.1
+      },
+      "constraints": {},
+      "expected_effects": [],
+      "on_failure": {},
+      "status": "planned"
     }
   ],
   "verification_policy": {

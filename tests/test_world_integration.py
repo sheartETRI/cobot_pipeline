@@ -7,6 +7,7 @@ import pytest
 from executor import run_ir
 from ir_models import GenericCobotIR
 from run_demo import resolve_simulator_backend, validate_ir_world_consistency
+from sample_paths import ir_sample_path, world_sample_path
 from world_model import WorldModel
 
 
@@ -15,8 +16,8 @@ def load_json(path: str):
 
 
 def test_sample_pick_place_with_world():
-    ir = GenericCobotIR.model_validate(load_json("samples/sample_pick_place.json"))
-    world = WorldModel.model_validate(load_json("samples/sample_pick_place.world.json"))
+    ir = GenericCobotIR.model_validate(load_json(str(ir_sample_path("sample_pick_place"))))
+    world = WorldModel.model_validate(load_json(str(world_sample_path("sample_pick_place"))))
 
     errors, warnings = validate_ir_world_consistency(ir, world)
     result = run_ir(ir, world_model=world)
@@ -27,14 +28,14 @@ def test_sample_pick_place_with_world():
 
 
 def test_ir_only_runs():
-    ir = GenericCobotIR.model_validate(load_json("samples/sample_pick_place.json"))
+    ir = GenericCobotIR.model_validate(load_json(str(ir_sample_path("sample_pick_place"))))
     result = run_ir(ir, world_model=None)
     assert result is not None
 
 
 def test_registry_id_missing_emits_warning():
-    ir_data = load_json("samples/sample_pick_place.json")
-    world_data = load_json("samples/sample_pick_place.world.json")
+    ir_data = load_json(str(ir_sample_path("sample_pick_place")))
+    world_data = load_json(str(world_sample_path("sample_pick_place")))
     del world_data["objects"]["block_red"]["metadata"]["registry_id"]
 
     ir = GenericCobotIR.model_validate(ir_data)
@@ -46,8 +47,8 @@ def test_registry_id_missing_emits_warning():
 
 
 def test_registry_id_mismatch_is_error():
-    ir_data = load_json("samples/sample_pick_place.json")
-    world_data = load_json("samples/sample_pick_place.world.json")
+    ir_data = load_json(str(ir_sample_path("sample_pick_place")))
+    world_data = load_json(str(world_sample_path("sample_pick_place")))
     world_data["objects"]["block_red"]["metadata"]["registry_id"] = "obj_block_red_wrong"
 
     ir = GenericCobotIR.model_validate(ir_data)
@@ -59,8 +60,8 @@ def test_registry_id_mismatch_is_error():
 
 
 def test_move_linear_aabb_collision_detected():
-    ir = GenericCobotIR.model_validate(load_json("samples/sample_pick_place.json"))
-    world_data = load_json("samples/sample_pick_place.world.json")
+    ir = GenericCobotIR.model_validate(load_json(str(ir_sample_path("sample_pick_place"))))
+    world_data = load_json(str(world_sample_path("sample_pick_place")))
     world_data["objects"]["blocking_obstacle"] = {
         "object_id": "blocking_obstacle",
         "object_type": "obstacle",
@@ -90,8 +91,8 @@ def test_move_linear_aabb_collision_detected():
 
 
 def test_insert_geometry_collision_detected():
-    ir = GenericCobotIR.model_validate(load_json("samples/sample_insert.json"))
-    world_data = load_json("samples/sample_insert.world.json")
+    ir = GenericCobotIR.model_validate(load_json(str(ir_sample_path("sample_insert"))))
+    world_data = load_json(str(world_sample_path("sample_insert")))
     world_data["features"]["hole"]["width"] = 0.006
     world = WorldModel.model_validate(world_data)
 
@@ -103,15 +104,15 @@ def test_insert_geometry_collision_detected():
 
 
 def test_unknown_simulator_backend_raises():
-    ir = GenericCobotIR.model_validate(load_json("samples/sample_pick_place.json"))
+    ir = GenericCobotIR.model_validate(load_json(str(ir_sample_path("sample_pick_place"))))
 
     with pytest.raises(ValueError, match="unknown simulator_backend"):
         run_ir(ir, simulator_backend="invalid_backend")
 
 
 def test_pybullet_backend_requires_pybullet_or_world():
-    ir = GenericCobotIR.model_validate(load_json("samples/sample_pick_place.json"))
-    world = WorldModel.model_validate(load_json("samples/sample_pick_place.world.json"))
+    ir = GenericCobotIR.model_validate(load_json(str(ir_sample_path("sample_pick_place"))))
+    world = WorldModel.model_validate(load_json(str(world_sample_path("sample_pick_place"))))
 
     if find_spec("pybullet") is None:
         with pytest.raises(RuntimeError, match="pybullet is not installed"):
@@ -126,5 +127,5 @@ def test_resolve_simulator_backend_falls_back_to_mock_without_world():
 
 
 def test_resolve_simulator_backend_keeps_pybullet_with_world():
-    world = WorldModel.model_validate(load_json("samples/sample_pick_place.world.json"))
+    world = WorldModel.model_validate(load_json(str(world_sample_path("sample_pick_place"))))
     assert resolve_simulator_backend("pybullet", world) == "pybullet"

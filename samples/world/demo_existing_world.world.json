@@ -30,8 +30,8 @@
       "graspable": true,
       "collision_enabled": true,
       "metadata": {
-        "color": "red",
-        "registry_id": "obj_block_red_01"
+        "registry_id": "obj_block_red_01",
+        "rgba": "1.0,0.0,0.0,1.0"
       }
     },
     "target_zone": {
@@ -63,8 +63,8 @@
       "graspable": false,
       "collision_enabled": true,
       "metadata": {
-        "role": "placement_fixture",
-        "registry_id": "obj_target_zone_01"
+        "registry_id": "obj_target_zone_01",
+        "rgba": "0.3,0.3,0.3,1.0"
       }
     }
   },
@@ -87,12 +87,12 @@
           1.0
         ]
       },
-      "size_hint": [
-        0.04,
-        0.04
-      ],
+      "size_hint": null,
+      "axis": null,
+      "depth": null,
+      "width": null,
       "metadata": {
-        "usage": "grasp_reference_surface"
+        "source": "pybullet_export"
       }
     },
     "target_surface": {
@@ -104,7 +104,7 @@
         "position": [
           0.0,
           0.0,
-          0.01
+          0.0
         ],
         "orientation": [
           0.0,
@@ -113,12 +113,12 @@
           1.0
         ]
       },
-      "size_hint": [
-        0.18,
-        0.12
-      ],
+      "size_hint": null,
+      "axis": null,
+      "depth": null,
+      "width": null,
       "metadata": {
-        "usage": "flat_placement_surface"
+        "source": "pybullet_export"
       }
     }
   },
@@ -141,7 +141,7 @@
         ]
       },
       "metadata": {
-        "source": "object_pose"
+        "source": "pybullet_export"
       }
     },
     "target_zone_frame": {
@@ -162,7 +162,7 @@
         ]
       },
       "metadata": {
-        "source": "object_pose"
+        "source": "pybullet_export"
       }
     },
     "home_frame": {
@@ -183,7 +183,7 @@
         ]
       },
       "metadata": {
-        "source": "robot_home"
+        "source": "pybullet_export"
       }
     }
   },
@@ -203,14 +203,7 @@
         1.0
       ]
     },
-    "joint_positions": [
-      0.0,
-      -1.2,
-      1.5,
-      0.0,
-      1.2,
-      0.0
-    ],
+    "joint_positions": [],
     "attached_object": null
   }
 }

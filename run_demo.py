@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from executor import close_persistent_simulator, get_persistent_simulator, run_ir
 from ir_models import GenericCobotIR, VerificationResult
+from sample_paths import SAMPLES_DIR, discover_ir_samples as discover_ir_sample_paths, ir_sample_path, resolve_world_for_ir
 from world_model import WorldModel
 
 
@@ -55,11 +56,7 @@ def load_world(path: str) -> WorldModel:
 
 
 def resolve_world_path(ir_path: str) -> Path | None:
-    ir_file = Path(ir_path)
-    if ir_file.suffix != ".json":
-        return None
-    candidate = ir_file.with_name(f"{ir_file.stem}.world.json")
-    resolved = candidate if candidate.exists() else None
+    resolved = resolve_world_for_ir(ir_path)
     logger.debug("Resolved world path for %s -> %s", ir_path, resolved)
     return resolved
 
@@ -210,13 +207,7 @@ def discover_samples(samples_dir: str) -> list[str]:
     if not sample_dir.exists() or not sample_dir.is_dir():
         print(f"[WARN] samples directory not found: {samples_dir}. Falling back to default sample list.")
         return []
-    samples = sorted(
-        str(path)
-        for path in sample_dir.glob("*.json")
-        if not path.name.endswith(".world.json")
-        and not path.name.endswith("_repair_patch.json")
-        and not path.name.endswith("_verification.json")
-    )
+    samples = discover_ir_sample_paths(sample_dir)
     logger.debug("Discovered samples in %s: %s", samples_dir, samples)
     return samples
 
@@ -247,7 +238,7 @@ def wait_for_pybullet_gui_close() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run demo IR samples with optional world models")
-    parser.add_argument("--samples-dir", type=str, default="samples", help="Directory containing sample IR/world JSON files")
+    parser.add_argument("--samples-dir", type=str, default=str(SAMPLES_DIR), help="Directory containing sample IR/world JSON files")
     parser.add_argument("--sample", type=str, default=None, help="Run a single IR sample JSON file")
     parser.add_argument("--strict", action="store_true", help="Treat warnings as errors in world consistency checks")
     parser.add_argument("--world", type=str, default=None, help="Optional: force a single world file path for all samples")
@@ -300,12 +291,12 @@ def main() -> None:
     )
 
     default_sample_files = [
-        "samples/sample_pick_place.json",
-        "samples/sample_pick_place_target_surface.json",
-        "samples/sample_pick_place_target_slot.json",
-        "samples/sample_pick_place_fixture_pocket.json",
-        "samples/sample_insert.json",
-        "samples/sample_insert_failure_ir.json",
+        str(ir_sample_path("sample_pick_place")),
+        str(ir_sample_path("sample_pick_place_target_surface")),
+        str(ir_sample_path("sample_pick_place_target_slot")),
+        str(ir_sample_path("sample_pick_place_fixture_pocket")),
+        str(ir_sample_path("sample_insert")),
+        str(ir_sample_path("sample_insert_failure_ir")),
     ]
 
     if args.sample:

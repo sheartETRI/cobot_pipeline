@@ -10,6 +10,7 @@ from typing import Any, Optional, Tuple
 
 from pydantic import ValidationError
 
+from sample_paths import WORLD_SAMPLES_DIR, ensure_sample_dirs
 from world_model import WorldModel
 
 try:
@@ -300,8 +301,9 @@ def _infer_tcp_pose(robot_body: int | None, world_frame: str) -> dict[str, Any]:
     }
 
 
-def export_world_model(path: str = "pybullet_exported_world.json", world_frame: str = "world") -> str:
+def export_world_model(path: str = str(WORLD_SAMPLES_DIR / "pybullet_exported_world.json"), world_frame: str = "world") -> str:
     """Export the current PyBullet state to a validated WorldModel JSON file."""
+    ensure_sample_dirs()
     client_id, temporary_shared_connection = _ensure_export_connection()
     if not p.isConnected(physicsClientId=client_id):
         raise RuntimeError("PyBullet connection is not active")

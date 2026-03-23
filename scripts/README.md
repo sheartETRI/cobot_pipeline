@@ -16,7 +16,7 @@
 ```bash
 python scripts/generate_and_run_rule.py \
   --nl "pick red block at (0.3,0.1,0.02) and place it at (0.55,0.12,0.01)" \
-  --existing-world samples/pybullet_exported_world.json \
+  --existing-world samples/world/pybullet_exported_world.json \
   --out-prefix sample_pick_place \
   --pybullet-gui
 ```
@@ -49,4 +49,4 @@ PyBullet 장면을 만들고 `WorldModel` JSON으로 export하는 유틸.
 - `create_box(...) -> int`
 - `create_fixture_box(...) -> int`
 - `add_feature(...) -> None`
-- `export_world_model(path: str = "pybullet_exported_world.json", world_frame: str = "world") -> str`
+- `export_world_model(path: str = "samples/world/pybullet_exported_world.json", world_frame: str = "world") -> str`

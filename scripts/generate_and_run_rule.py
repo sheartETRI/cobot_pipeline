@@ -24,6 +24,12 @@ if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
 from ir_models import GenericCobotIR
+from sample_paths import (
+    ensure_sample_dirs,
+    exported_world_sample_path,
+    ir_sample_path,
+    world_sample_path,
+)
 from world_model import WorldModel
 
 try:
@@ -32,8 +38,7 @@ except ImportError:
     import pybullet_world_utils
 
 
-SAMPLES_DIR = ROOT_DIR / "samples"
-SAMPLES_DIR.mkdir(exist_ok=True)
+ensure_sample_dirs()
 
 DEFAULT_BLOCK_POS = (0.3, 0.1, 0.02)
 DEFAULT_TARGET_POS = (0.55, 0.12, 0.01)
@@ -68,8 +73,8 @@ def format_validation_error(error: ValidationError) -> str:
 
 
 def resolve_prefix(prefix: str, force: bool) -> str:
-    ir_path = SAMPLES_DIR / f"{prefix}.json"
-    world_path = SAMPLES_DIR / f"{prefix}.world.json"
+    ir_path = ir_sample_path(prefix)
+    world_path = world_sample_path(prefix)
     if force:
         return prefix
     if not ir_path.exists() and not world_path.exists():
@@ -533,7 +538,7 @@ def run_sim(
 
 
 def export_world_from_pybullet(prefix: str) -> WorldModel:
-    export_path = SAMPLES_DIR / f"{prefix}.exported.world.json"
+    export_path = exported_world_sample_path(prefix)
     print_info(f"Exporting current PyBullet session to {export_path}")
     exported = pybullet_world_utils.export_world_model(str(export_path))
     return load_world_file(exported)
@@ -607,8 +612,8 @@ def main(argv: list[str] | None = None) -> int:
         ir_data = build_ir_from_world(nl_text, world_model)
         ir_model = validate_ir_dict(ir_data)
 
-        world_path = save_world_model(world_model, SAMPLES_DIR / f"{prefix}.world.json")
-        ir_path = save_ir_model(ir_model, SAMPLES_DIR / f"{prefix}.json")
+        world_path = save_world_model(world_model, world_sample_path(prefix))
+        ir_path = save_ir_model(ir_model, ir_sample_path(prefix))
 
         print_info(
             f"Validation complete: objects={len(world_model.objects)}, "
