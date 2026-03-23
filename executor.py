@@ -923,9 +923,32 @@ class PyBulletSimulator(MockSimulator):
             return self.p.GEOM_BOX, [geometry.size[0] / 2.0, geometry.size[1] / 2.0, 0.001], 0.0
         return self.p.GEOM_BOX, [0.01, 0.01, 0.01], 0.0
 
+    def parse_rgba_metadata(self, value: Any) -> List[float] | None:
+        if isinstance(value, str):
+            parts = [part.strip() for part in value.split(",")]
+        elif isinstance(value, (list, tuple)):
+            parts = list(value)
+        else:
+            return None
+
+        if len(parts) != 4:
+            return None
+
+        try:
+            rgba = [float(part) for part in parts]
+        except (TypeError, ValueError):
+            return None
+
+        if any(channel < 0.0 or channel > 1.0 for channel in rgba):
+            return None
+        return rgba
+
     def object_rgba_color(self, object_id: str) -> List[float]:
         obj = self.world_model.get_object(object_id)
         metadata = obj.metadata
+        rgba_metadata = self.parse_rgba_metadata(metadata.get("rgba"))
+        if rgba_metadata is not None:
+            return rgba_metadata
         color_name = metadata.get("color", "").lower()
         role = metadata.get("role", "").lower()
         object_type = obj.object_type.lower()
@@ -1603,7 +1626,95 @@ def check_goal_reached(ir: GenericCobotIR, sim: MockSimulator) -> bool:
     return True
 
 
-def run_ir(
+def materialize_world_model(world_model: WorldModel | None, sim: MockSimulator) -> WorldModel | None:
+    if world_model is None:
+        return None
+
+    world_data = deepcopy(world_model.model_dump(mode="python"))
+
+    for object_id, pose_world in sim.world.object_world_poses.items():
+        if object_id not in world_data["objects"]:
+            continue
+        world_data["objects"][object_id]["pose"] = {
+            "frame": world_model.world_frame,
+            "position": list(pose_world["position"]),
+            "orientation": list(pose_world["orientation"]),
+        }
+
+    for frame_id, frame_data in world_data["frames"].items():
+        registry_path = frame_data.get("registry_path", "")
+        registry_base = registry_path.split("/")[0]
+        matched = world_model.find_object_by_registry_id(registry_base)
+        if matched is None:
+            continue
+        object_pose = sim.world.object_world_poses.get(matched.object_id)
+        if object_pose is None:
+            continue
+        frame_data["pose"] = {
+            "frame": world_model.world_frame,
+            "position": list(object_pose["position"]),
+            "orientation": list(object_pose["orientation"]),
+        }
+
+    if sim.world.tcp_pose_world is not None:
+        world_data["robot_state"]["tcp_pose"] = {
+            "frame": world_model.world_frame,
+            "position": list(sim.world.tcp_pose_world["position"]),
+            "orientation": list(sim.world.tcp_pose_world["orientation"]),
+        }
+    world_data["robot_state"]["attached_object"] = sim.world.attached_object
+
+    if "start_tcp_frame" in world_data["frames"] and sim.world.tcp_pose_world is not None:
+        world_data["frames"]["start_tcp_frame"]["pose"] = {
+            "frame": world_model.world_frame,
+            "position": list(sim.world.tcp_pose_world["position"]),
+            "orientation": list(sim.world.tcp_pose_world["orientation"]),
+        }
+
+    return WorldModel.model_validate(world_data)
+
+
+def _build_failed_result(
+    *,
+    ir: GenericCobotIR,
+    sim: MockSimulator,
+    traces: List[StepTrace],
+    executed: int,
+    step_id: str,
+    error: Dict[str, Any],
+    collision_detected: bool,
+) -> VerificationResult:
+    return VerificationResult(
+        task_id=ir.task_id,
+        simulator=sim.simulator_name,
+        status="failed",
+        summary=VerificationSummary(
+            steps_total=len(ir.action_plan),
+            steps_executed=executed,
+            goal_reached=False,
+            collision_detected=collision_detected,
+        ),
+        errors=[
+            VerificationError(
+                error_id=error["error_id"],
+                step_id=step_id,
+                type=error["type"],
+                severity=ErrorSeverity.HIGH,
+                message=error["message"],
+                entities=error.get("entities", []),
+                suggested_repairs=error.get("suggested_repairs", []),
+            )
+        ],
+        metrics=VerificationMetrics(
+            min_clearance=0.0015 if collision_detected else 0.01,
+            max_joint_velocity_ratio=0.58 if collision_detected else 0.4,
+            estimated_execution_time_sec=float(max(executed, 1)),
+        ),
+        traces=traces,
+    )
+
+
+def _run_ir_internal(
     ir: GenericCobotIR,
     world_model: WorldModel | None = None,
     *,
@@ -1613,9 +1724,10 @@ def run_ir(
     pybullet_motion_delay: float = 0.0,
     pybullet_step_pause: float = 0.0,
     pybullet_step_wait_for_input: bool = False,
-) -> VerificationResult:
+) -> tuple[VerificationResult, WorldModel | None]:
+    sim: MockSimulator
     if simulator_backend == "mock":
-        sim: MockSimulator = MockSimulator(ir, world_model=world_model)
+        sim = MockSimulator(ir, world_model=world_model)
     elif simulator_backend == "pybullet":
         sim = PyBulletSimulator(
             ir,
@@ -1627,9 +1739,11 @@ def run_ir(
         )
     else:
         raise ValueError(f"unknown simulator_backend: {simulator_backend}")
+
     executed = 0
     collision_detected = False
     traces: List[StepTrace] = []
+
     try:
         for step in ir.action_plan:
             before_state = sim.snapshot_state()
@@ -1647,34 +1761,16 @@ def run_ir(
                         error=ref_err,
                     )
                 )
-                return VerificationResult(
-                    task_id=ir.task_id,
-                    simulator=sim.simulator_name,
-                    status="failed",
-                    summary=VerificationSummary(
-                        steps_total=len(ir.action_plan),
-                        steps_executed=executed,
-                        goal_reached=False,
-                        collision_detected=False,
-                    ),
-                    errors=[
-                        VerificationError(
-                            error_id=ref_err["error_id"],
-                            step_id=step.step_id,
-                            type=ref_err["type"],
-                            severity=ErrorSeverity.HIGH,
-                            message=ref_err["message"],
-                            entities=ref_err.get("entities", []),
-                            suggested_repairs=ref_err.get("suggested_repairs", []),
-                        )
-                    ],
-                    metrics=VerificationMetrics(
-                        min_clearance=0.01,
-                        max_joint_velocity_ratio=0.4,
-                        estimated_execution_time_sec=float(executed + 1),
-                    ),
+                result = _build_failed_result(
+                    ir=ir,
+                    sim=sim,
                     traces=traces,
+                    executed=executed,
+                    step_id=step.step_id,
+                    error=ref_err,
+                    collision_detected=False,
                 )
+                return result, materialize_world_model(world_model, sim)
 
             ok, err = sim.execute_step(step)
             after_state = sim.snapshot_state()
@@ -1694,43 +1790,23 @@ def run_ir(
                 step.status = StepStatus.FAILED
                 if err["type"] == "collision":
                     collision_detected = True
-
-                return VerificationResult(
-                    task_id=ir.task_id,
-                    simulator=sim.simulator_name,
-                    status="failed",
-                    summary=VerificationSummary(
-                        steps_total=len(ir.action_plan),
-                        steps_executed=executed + 1,
-                        goal_reached=False,
-                        collision_detected=collision_detected,
-                    ),
-                    errors=[
-                        VerificationError(
-                            error_id=err["error_id"],
-                            step_id=step.step_id,
-                            type=err["type"],
-                            severity=ErrorSeverity.HIGH,
-                            message=err["message"],
-                            entities=err.get("entities", []),
-                            suggested_repairs=err.get("suggested_repairs", []),
-                        )
-                    ],
-                    metrics=VerificationMetrics(
-                        min_clearance=0.0015 if collision_detected else 0.01,
-                        max_joint_velocity_ratio=0.58 if collision_detected else 0.4,
-                        estimated_execution_time_sec=float(executed + 1),
-                    ),
+                result = _build_failed_result(
+                    ir=ir,
+                    sim=sim,
                     traces=traces,
+                    executed=executed + 1,
+                    step_id=step.step_id,
+                    error=err,
+                    collision_detected=collision_detected,
                 )
+                return result, materialize_world_model(world_model, sim)
 
             step.status = StepStatus.SIMULATED
             executed += 1
 
         goal_reached = check_goal_reached(ir, sim)
         logger.debug("Execution completed task_id=%s steps=%d goal_reached=%s", ir.task_id, executed, goal_reached)
-
-        return VerificationResult(
+        result = VerificationResult(
             task_id=ir.task_id,
             simulator=sim.simulator_name,
             status="passed" if goal_reached else "failed",
@@ -1758,6 +1834,7 @@ def run_ir(
             ),
             traces=traces,
         )
+        return result, materialize_world_model(world_model, sim)
     finally:
         if (
             keep_simulator_open
@@ -1768,3 +1845,50 @@ def run_ir(
             keep_persistent_simulator_open(sim)
         elif hasattr(sim, "close"):
             sim.close()
+
+
+def run_ir(
+    ir: GenericCobotIR,
+    world_model: WorldModel | None = None,
+    *,
+    simulator_backend: str = "mock",
+    pybullet_gui: bool = False,
+    keep_simulator_open: bool = False,
+    pybullet_motion_delay: float = 0.0,
+    pybullet_step_pause: float = 0.0,
+    pybullet_step_wait_for_input: bool = False,
+) -> VerificationResult:
+    result, _ = _run_ir_internal(
+        ir,
+        world_model=world_model,
+        simulator_backend=simulator_backend,
+        pybullet_gui=pybullet_gui,
+        keep_simulator_open=keep_simulator_open,
+        pybullet_motion_delay=pybullet_motion_delay,
+        pybullet_step_pause=pybullet_step_pause,
+        pybullet_step_wait_for_input=pybullet_step_wait_for_input,
+    )
+    return result
+
+
+def run_ir_with_final_world(
+    ir: GenericCobotIR,
+    world_model: WorldModel | None = None,
+    *,
+    simulator_backend: str = "mock",
+    pybullet_gui: bool = False,
+    keep_simulator_open: bool = False,
+    pybullet_motion_delay: float = 0.0,
+    pybullet_step_pause: float = 0.0,
+    pybullet_step_wait_for_input: bool = False,
+) -> tuple[VerificationResult, WorldModel | None]:
+    return _run_ir_internal(
+        ir,
+        world_model=world_model,
+        simulator_backend=simulator_backend,
+        pybullet_gui=pybullet_gui,
+        keep_simulator_open=keep_simulator_open,
+        pybullet_motion_delay=pybullet_motion_delay,
+        pybullet_step_pause=pybullet_step_pause,
+        pybullet_step_wait_for_input=pybullet_step_wait_for_input,
+    )

@@ -8,6 +8,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,7 @@ from sample_paths import (
     ir_sample_path,
     world_sample_path,
 )
+from geometry_utils import compose_pose
 from world_model import WorldModel
 
 try:
@@ -42,9 +44,12 @@ ensure_sample_dirs()
 
 DEFAULT_BLOCK_POS = (0.3, 0.1, 0.02)
 DEFAULT_TARGET_POS = (0.55, 0.12, 0.01)
-REQUIRED_OBJECTS = ("block_red", "target_zone")
-REQUIRED_FEATURES = ("block_red_top_surface", "target_surface")
-REQUIRED_FRAMES = ("block_red_frame", "target_zone_frame", "home_frame")
+TARGET_OBJECT_ID = "target_zone"
+START_TCP_FRAME_ID = "start_tcp_frame"
+PREGRASP_CLEARANCE = 0.02
+PREPLACE_CLEARANCE = 0.04
+GRIPPER_HALF_HEIGHT = 0.06
+SUPPORT_CLEARANCE = 0.005
 
 
 def print_info(message: str) -> None:
@@ -241,8 +246,164 @@ def geometry_size(geometry: Any) -> list[float]:
     return [0.04, 0.04, 0.04]
 
 
-def ensure_object_aliases(world: WorldModel) -> None:
-    for object_id in REQUIRED_OBJECTS:
+def resolve_pose_to_world(world: WorldModel, pose: Any, visited: set[str] | None = None) -> dict[str, Any]:
+    if hasattr(pose, "model_dump"):
+        pose_data = pose.model_dump(mode="python")
+    else:
+        pose_data = dict(pose)
+
+    frame_name = pose_data.get("frame", world.world_frame)
+    if frame_name == world.world_frame:
+        return {
+            "frame": world.world_frame,
+            "position": list(pose_data["position"]),
+            "orientation": list(pose_data["orientation"]),
+        }
+
+    next_visited = set() if visited is None else set(visited)
+    if frame_name in next_visited:
+        raise ValueError(f"cyclic frame reference detected while resolving '{frame_name}'")
+    next_visited.add(frame_name)
+
+    if world.has_object(frame_name):
+        parent_pose = world.get_object(frame_name).pose
+    elif world.has_feature(frame_name):
+        parent_pose = world.get_feature(frame_name).local_pose
+    elif world.has_frame(frame_name):
+        parent_pose = world.get_frame(frame_name).pose
+    else:
+        raise ValueError(f"unknown pose frame '{frame_name}' in world model")
+
+    parent_world = resolve_pose_to_world(world, parent_pose, visited=next_visited)
+    return compose_pose(parent_world, pose_data)
+
+
+def resolve_feature_pose_to_world(world: WorldModel, feature_id: str) -> dict[str, Any]:
+    return resolve_pose_to_world(world, world.get_feature(feature_id).local_pose)
+
+
+def infer_support_top_z(world: WorldModel, object_id: str) -> float | None:
+    source_pose = resolve_pose_to_world(world, world.get_object(object_id).pose)
+    source_size = geometry_size(world.get_object(object_id).geometry)
+    source_bottom_z = source_pose["position"][2] - (source_size[2] / 2.0)
+    source_x, source_y = source_pose["position"][0], source_pose["position"][1]
+
+    best_top_z: float | None = None
+    best_gap: float | None = None
+    for candidate_id, candidate in world.objects.items():
+        if candidate_id == object_id:
+            continue
+        candidate_pose = resolve_pose_to_world(world, candidate.pose)
+        candidate_size = geometry_size(candidate.geometry)
+        candidate_top_z = candidate_pose["position"][2] + (candidate_size[2] / 2.0)
+        if candidate_top_z > source_bottom_z + 1e-6:
+            continue
+
+        half_x = candidate_size[0] / 2.0
+        half_y = candidate_size[1] / 2.0
+        if abs(source_x - candidate_pose["position"][0]) > half_x:
+            continue
+        if abs(source_y - candidate_pose["position"][1]) > half_y:
+            continue
+
+        gap = source_bottom_z - candidate_top_z
+        if best_gap is None or gap < best_gap:
+            best_gap = gap
+            best_top_z = candidate_top_z
+    return best_top_z
+
+
+def resolve_source_object_alias(world: WorldModel, nl: str) -> str:
+    normalized = nl.lower().replace("_", " ")
+    explicit_pick_match = re.search(r"pick\s+(?:the\s+)?([a-z0-9_ ]+?)\s+block(?=\s+and|\s*$)", normalized)
+    if explicit_pick_match:
+        pick_phrase = explicit_pick_match.group(1).strip()
+        pick_tokens = sorted(token for token in f"{pick_phrase} block".split() if token)
+        for obj in world.objects.values():
+            alias_tokens = sorted(token for token in obj.object_id.lower().replace("_", " ").split() if token)
+            if pick_tokens == alias_tokens:
+                return obj.object_id
+        raise ValueError(f"could not resolve pick target '{pick_phrase} block' to a movable/graspable object in world")
+
+    explicit_pick_target = re.search(r"pick\s+(?:the\s+)?([a-z0-9_ ]+?)(?:\s+and|\s*$)", normalized)
+    if explicit_pick_target:
+        pick_phrase = explicit_pick_target.group(1).strip()
+        if pick_phrase:
+            for obj in world.objects.values():
+                alias_phrase = obj.object_id.lower().replace("_", " ")
+                alias_tokens = sorted(token for token in alias_phrase.split() if token)
+                pick_tokens = sorted(token for token in pick_phrase.split() if token)
+                if pick_phrase == alias_phrase or pick_tokens == alias_tokens:
+                    if obj.object_id == TARGET_OBJECT_ID or not (obj.movable or obj.graspable):
+                        raise ValueError(
+                            f"pick target '{pick_phrase}' is not movable/graspable in the current world"
+                        )
+                    return obj.object_id
+            if pick_phrase in {"target", "target zone", "target_zone"}:
+                raise ValueError("pick target 'target' is not movable/graspable in the current world")
+
+    candidates = [
+        obj
+        for obj in world.objects.values()
+        if obj.object_id != TARGET_OBJECT_ID and (obj.movable or obj.graspable)
+    ]
+    if not candidates:
+        raise ValueError("existing world does not contain any movable/graspable source objects")
+
+    scored: list[tuple[int, str]] = []
+    for obj in candidates:
+        score = 0
+        alias_phrase = obj.object_id.lower().replace("_", " ")
+        if alias_phrase in normalized:
+            score += 100
+
+        metadata = obj.metadata
+        color_name = str(metadata.get("color", "")).lower().strip()
+        if color_name and color_name in normalized:
+            score += 50
+
+        object_tokens = [token for token in re.split(r"[^a-z0-9]+", alias_phrase) if token]
+        for token in object_tokens:
+            if token in {"obj", "01", "02", "03"}:
+                continue
+            if token in normalized:
+                score += 10
+
+        registry_id = str(metadata.get("registry_id", "")).lower().replace("_", " ")
+        if registry_id and registry_id in normalized:
+            score += 80
+
+        scored.append((score, obj.object_id))
+
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    best_score, best_object_id = scored[0]
+    if best_score <= 0:
+        if "block_red" in world.objects:
+            return "block_red"
+        return best_object_id
+    return best_object_id
+
+
+def resolve_target_feature_binding(world: WorldModel, nl: str, source_object_id: str) -> tuple[str, str]:
+    normalized = nl.lower().replace("_", " ")
+    explicit_surface_match = re.search(r"(?:on|onto|to)\s+the\s+([a-z0-9_ ]+?)\s+surface", normalized)
+    if explicit_surface_match:
+        target_phrase = explicit_surface_match.group(1).strip()
+        if target_phrase == "target":
+            return TARGET_OBJECT_ID, "target_surface"
+        for object_id in world.objects.keys():
+            alias_phrase = object_id.lower().replace("_", " ")
+            alias_tokens = sorted(token for token in alias_phrase.split() if token)
+            target_tokens = sorted(token for token in target_phrase.split() if token)
+            if target_phrase == alias_phrase or target_tokens == alias_tokens:
+                return object_id, f"{object_id}_top_surface"
+    if "target surface" in normalized:
+        return TARGET_OBJECT_ID, "target_surface"
+    return TARGET_OBJECT_ID, "target_surface"
+
+
+def ensure_object_aliases(world: WorldModel, *object_ids: str) -> None:
+    for object_id in object_ids:
         if object_id not in world.objects:
             raise ValueError(
                 f"existing world does not contain required object alias '{object_id}'. "
@@ -250,46 +411,80 @@ def ensure_object_aliases(world: WorldModel) -> None:
             )
 
 
+def ensure_object_frame_and_surface(
+    world: WorldModel,
+    world_data: dict[str, Any],
+    object_id: str,
+    *,
+    warn_prefix: str = "existing world",
+) -> tuple[str, str]:
+    obj_payload = world_data["objects"][object_id]
+    obj_size = geometry_size(world.get_object(object_id).geometry)
+    registry_id = obj_payload.get("metadata", {}).get("registry_id")
+    if not registry_id:
+        raise ValueError(f"{warn_prefix} must provide metadata.registry_id for '{object_id}'")
+
+    frame_id = f"{object_id}_frame"
+    surface_id = f"{object_id}_top_surface"
+    frames = world_data.setdefault("frames", {})
+    features = world_data.setdefault("features", {})
+
+    if frame_id not in frames:
+        frame_payload = {
+            "frame_id": frame_id,
+            "registry_path": f"{registry_id}/frame",
+            "pose": obj_payload["pose"],
+            "metadata": {"source": "auto_generated_from_object"},
+        }
+        print_warn(f"{warn_prefix} is missing '{frame_id}'; generating it from object pose")
+        print_auto_fill(frame_id, "object pose", frame_payload)
+        frames[frame_id] = frame_payload
+
+    if surface_id not in features:
+        feature_payload = {
+            "feature_id": surface_id,
+            "parent_object": object_id,
+            "feature_type": "surface",
+            "local_pose": {
+                "frame": object_id,
+                "position": [0.0, 0.0, obj_size[2] / 2.0],
+                "orientation": [0.0, 0.0, 0.0, 1.0],
+            },
+            "size_hint": [obj_size[0], obj_size[1]],
+            "metadata": {"source": "auto_generated"},
+        }
+        print_warn(f"{warn_prefix} is missing '{surface_id}'; generating a top surface feature")
+        print_auto_fill(surface_id, f"{object_id} geometry top face", feature_payload)
+        features[surface_id] = feature_payload
+
+    return frame_id, surface_id
+
+
 def ensure_world_features_and_frames(
     world: WorldModel,
+    source_object_id: str,
+    target_object_id: str | None = None,
     desired_target: Tuple[float, float, float] | None = None,
 ) -> WorldModel:
-    ensure_object_aliases(world)
+    target_object_id = target_object_id or TARGET_OBJECT_ID
+    ensure_object_aliases(world, source_object_id, target_object_id)
     world_data = world.model_dump(mode="python")
 
-    block_obj = world.get_object("block_red")
-    target_obj = world.get_object("target_zone")
+    block_obj = world.get_object(source_object_id)
+    target_obj = world.get_object(target_object_id)
     block_size = geometry_size(block_obj.geometry)
     target_size = geometry_size(target_obj.geometry)
     block_registry_id = block_obj.metadata.get("registry_id")
     target_registry_id = target_obj.metadata.get("registry_id")
+    source_frame_id, source_surface_id = ensure_object_frame_and_surface(world, world_data, source_object_id)
+    target_frame_id, target_surface_id = ensure_object_frame_and_surface(world, world_data, target_object_id)
 
     if not block_registry_id or not target_registry_id:
         raise ValueError(
-            "existing world must provide metadata.registry_id for 'block_red' and 'target_zone'"
+            f"existing world must provide metadata.registry_id for '{source_object_id}' and '{target_object_id}'"
         )
 
     frames = world_data.setdefault("frames", {})
-    if "block_red_frame" not in frames:
-        frame_payload = {
-            "frame_id": "block_red_frame",
-            "registry_path": f"{block_registry_id}/frame",
-            "pose": world_data["objects"]["block_red"]["pose"],
-            "metadata": {"source": "auto_generated_from_object"},
-        }
-        print_warn("existing world is missing 'block_red_frame'; generating it from object pose")
-        print_auto_fill("block_red_frame", "object pose", frame_payload)
-        frames["block_red_frame"] = frame_payload
-    if "target_zone_frame" not in frames:
-        frame_payload = {
-            "frame_id": "target_zone_frame",
-            "registry_path": f"{target_registry_id}/frame",
-            "pose": world_data["objects"]["target_zone"]["pose"],
-            "metadata": {"source": "auto_generated_from_object"},
-        }
-        print_warn("existing world is missing 'target_zone_frame'; generating it from object pose")
-        print_auto_fill("target_zone_frame", "object pose", frame_payload)
-        frames["target_zone_frame"] = frame_payload
     if "home_frame" not in frames:
         frame_payload = {
             "frame_id": "home_frame",
@@ -300,32 +495,25 @@ def ensure_world_features_and_frames(
         print_warn("existing world is missing 'home_frame'; generating it from robot_state.tcp_pose")
         print_auto_fill("home_frame", "robot_state.tcp_pose", frame_payload)
         frames["home_frame"] = frame_payload
+    if START_TCP_FRAME_ID not in frames:
+        frame_payload = {
+            "frame_id": START_TCP_FRAME_ID,
+            "registry_path": "robot/start_tcp_pose",
+            "pose": world_data["robot_state"]["tcp_pose"],
+            "metadata": {"source": "auto_generated_from_robot_state"},
+        }
+        print_warn(f"existing world is missing '{START_TCP_FRAME_ID}'; generating it from robot_state.tcp_pose")
+        print_auto_fill(START_TCP_FRAME_ID, "robot_state.tcp_pose", frame_payload)
+        frames[START_TCP_FRAME_ID] = frame_payload
 
     features = world_data.setdefault("features", {})
-    if "block_red_top_surface" not in features:
-        feature_payload = {
-            "feature_id": "block_red_top_surface",
-            "parent_object": "block_red",
-            "feature_type": "surface",
-            "local_pose": {
-                "frame": "block_red",
-                "position": [0.0, 0.0, block_size[2] / 2.0],
-                "orientation": [0.0, 0.0, 0.0, 1.0],
-            },
-            "size_hint": [block_size[0], block_size[1]],
-            "metadata": {"source": "auto_generated"},
-        }
-        print_warn("existing world is missing 'block_red_top_surface'; generating a top surface feature")
-        print_auto_fill("block_red_top_surface", "block_red geometry top face", feature_payload)
-        features["block_red_top_surface"] = feature_payload
-
-    if "target_surface" not in features:
+    if target_surface_id == "target_surface" and "target_surface" not in features:
         feature_payload = {
             "feature_id": "target_surface",
-            "parent_object": "target_zone",
+            "parent_object": target_object_id,
             "feature_type": "surface",
             "local_pose": {
-                "frame": "target_zone",
+                "frame": target_object_id,
                 "position": [0.0, 0.0, target_size[2] / 2.0],
                 "orientation": [0.0, 0.0, 0.0, 1.0],
             },
@@ -338,15 +526,15 @@ def ensure_world_features_and_frames(
         print_auto_fill("target_surface", "target_zone geometry top face", feature_payload)
         features["target_surface"] = feature_payload
 
-    if desired_target is not None:
-        target_pose = world.get_object("target_zone").pose
+    if desired_target is not None and target_surface_id == "target_surface":
+        target_pose = world.get_object(target_object_id).pose
         local_position = [
             desired_target[0] - target_pose.position[0],
             desired_target[1] - target_pose.position[1],
             desired_target[2] - target_pose.position[2],
         ]
         features["target_surface"]["local_pose"] = {
-            "frame": "target_zone",
+            "frame": target_object_id,
             "position": local_position,
             "orientation": [0.0, 0.0, 0.0, 1.0],
         }
@@ -363,11 +551,15 @@ def build_ir_from_world(
     world: WorldModel,
     task_suffix: str = "",
 ) -> dict[str, Any]:
-    block_registry_id = world.get_object("block_red").metadata.get("registry_id")
-    target_registry_id = world.get_object("target_zone").metadata.get("registry_id")
+    source_object_id = resolve_source_object_alias(world, nl)
+    target_object_id, target_feature_id = resolve_target_feature_binding(world, nl, source_object_id)
+    source_frame_id = f"{source_object_id}_frame"
+    source_feature_id = f"{source_object_id}_top_surface"
+    block_registry_id = world.get_object(source_object_id).metadata.get("registry_id")
+    target_registry_id = world.get_object(target_object_id).metadata.get("registry_id")
     if not block_registry_id or not target_registry_id:
         raise ValueError(
-            "existing world must provide metadata.registry_id for 'block_red' and 'target_zone'"
+            f"existing world must provide metadata.registry_id for '{source_object_id}' and '{target_object_id}'"
         )
 
     now = datetime.now(timezone.utc).isoformat()
@@ -378,6 +570,31 @@ def build_ir_from_world(
     )
     base_frame = world.robot_state.base_frame
     tool_frame = world.robot_state.tcp_pose.frame or base_frame
+    source_pose_world = resolve_pose_to_world(world, world.get_object(source_object_id).pose)
+    initial_tcp_pose_world = resolve_pose_to_world(world, world.robot_state.tcp_pose)
+    target_surface_pose_world = resolve_feature_pose_to_world(world, target_feature_id)
+    target_frame_id = f"{target_object_id}_frame"
+    target_frame_pose_world = resolve_pose_to_world(world, world.get_frame(target_frame_id).pose)
+    source_height = geometry_size(world.get_object(source_object_id).geometry)[2]
+    target_height = geometry_size(world.get_object(target_object_id).geometry)[2]
+    source_top_surface_offset = source_height / 2.0
+    move_linear_z_offset = round(initial_tcp_pose_world["position"][2] - source_pose_world["position"][2], 6)
+    final_retreat_distance = round(
+        max(0.0, initial_tcp_pose_world["position"][2] - target_surface_pose_world["position"][2]),
+        6,
+    )
+    target_preplace_offset = round((target_height / 2.0) + source_height + PREPLACE_CLEARANCE, 6)
+    support_top_z = infer_support_top_z(world, source_object_id)
+    pregrasp_offset = source_top_surface_offset + PREGRASP_CLEARANCE
+    if support_top_z is not None:
+        support_safe_offset = (support_top_z + GRIPPER_HALF_HEIGHT + SUPPORT_CLEARANCE) - source_pose_world["position"][2]
+        pregrasp_offset = max(pregrasp_offset, support_safe_offset)
+    pregrasp_offset = round(pregrasp_offset, 6)
+    transport_tcp_z = source_pose_world["position"][2] + pregrasp_offset + 0.08
+    transport_target_offset = round(
+        max(target_preplace_offset, transport_tcp_z - target_frame_pose_world["position"][2]),
+        6,
+    )
 
     return {
         "ir_version": "0.1",
@@ -388,7 +605,7 @@ def build_ir_from_world(
             "goal": "pick_and_place",
             "command_text": nl,
             "priority": "normal",
-            "success_condition": ["object_at_destination:block_red:target_surface"],
+            "success_condition": [f"object_at_destination:{source_object_id}:{target_feature_id}"],
             "assumptions": [],
         },
         "robot_profile": {
@@ -402,81 +619,104 @@ def build_ir_from_world(
         "world_binding": {
             "scene_id": "existing_world_scene",
             "objects": {
-                "block_red": block_registry_id,
-                "target_zone": target_registry_id,
+                source_object_id: block_registry_id,
+                target_object_id: target_registry_id,
             },
             "frames": {
-                "block_red_frame": world.get_frame("block_red_frame").registry_path,
-                "target_zone_frame": world.get_frame("target_zone_frame").registry_path,
+                source_frame_id: world.get_frame(source_frame_id).registry_path,
+                target_frame_id: world.get_frame(target_frame_id).registry_path,
                 "home_frame": world.get_frame("home_frame").registry_path,
+                START_TCP_FRAME_ID: world.get_frame(START_TCP_FRAME_ID).registry_path,
             },
             "regions": {},
             "features": {
-                "block_red_top_surface": {
-                    "parent_object": "block_red",
+                source_feature_id: {
+                    "parent_object": source_object_id,
                     "feature_type": "surface",
-                    "frame": "block_red_frame",
+                    "frame": source_frame_id,
                     "description": "top surface",
                 },
-                "target_surface": {
-                    "parent_object": "target_zone",
+                target_feature_id: {
+                    "parent_object": target_object_id,
                     "feature_type": "surface",
-                    "frame": "target_zone_frame",
+                    "frame": target_frame_id,
                     "description": "placement surface",
                 },
             },
         },
         "action_plan": [
-            {"step_id": "s1", "type": "find_object", "inputs": {"object": "block_red"}},
+            {"step_id": "s1", "type": "find_object", "inputs": {"object": source_object_id}},
             {
                 "step_id": "s2",
+                "type": "move_linear",
+                "inputs": {
+                    "target_pose": {
+                        "ref": source_frame_id,
+                        "offset": [0.0, 0.0, move_linear_z_offset],
+                        "orientation_policy": "align_with_object_top",
+                    }
+                },
+            },
+            {
+                "step_id": "s3",
                 "type": "approach",
                 "inputs": {
-                    "target_object": "block_red",
-                    "target_feature": "block_red_top_surface",
+                    "target_object": source_object_id,
+                    "target_feature": source_feature_id,
                     "approach_pose": {
-                        "ref": "block_red_frame",
-                        "offset": [0.0, 0.0, 0.08],
+                        "ref": source_frame_id,
+                        "offset": [0.0, 0.0, pregrasp_offset],
                         "orientation_policy": "align_with_object_top",
                     },
                 },
             },
             {
-                "step_id": "s3",
+                "step_id": "s4",
                 "type": "grasp",
                 "inputs": {
-                    "target_object": "block_red",
-                    "target_feature": "block_red_top_surface",
+                    "target_object": source_object_id,
+                    "target_feature": source_feature_id,
                     "grasp_mode": "pinch",
                 },
             },
-            {"step_id": "s4", "type": "retreat", "inputs": {"direction": "tool_z_negative", "distance": 0.08}},
+            {"step_id": "s5", "type": "retreat", "inputs": {"direction": "tool_z_negative", "distance": 0.08}},
             {
-                "step_id": "s5",
+                "step_id": "s6",
                 "type": "move_linear",
                 "inputs": {
                     "target_pose": {
-                        "ref": "target_zone_frame",
-                        "offset": [0.0, 0.0, 0.1],
+                        "ref": target_frame_id,
+                        "offset": [0.0, 0.0, transport_target_offset],
                         "orientation_policy": "keep_current",
                     }
                 },
             },
             {
-                "step_id": "s6",
+                "step_id": "s7",
                 "type": "place",
                 "inputs": {
-                    "target_object": "block_red",
-                    "target_feature": "target_surface",
+                    "target_object": source_object_id,
+                    "target_feature": target_feature_id,
                     "destination_pose": {
-                        "ref": "target_zone_frame",
-                        "offset": [0.0, 0.0, 0.0],
+                        "ref": target_frame_id,
+                        "offset": [0.0, 0.0, transport_target_offset],
                         "orientation_policy": "align_to_target_surface",
                     },
                 },
             },
-            {"step_id": "s7", "type": "release", "inputs": {"target_object": "block_red"}},
-            {"step_id": "s8", "type": "retreat", "inputs": {"direction": "tool_z_negative", "distance": 0.1}},
+            {"step_id": "s8", "type": "release", "inputs": {"target_object": source_object_id}},
+            {"step_id": "s9", "type": "retreat", "inputs": {"direction": "tool_z_negative", "distance": final_retreat_distance}},
+            {
+                "step_id": "s10",
+                "type": "move_linear",
+                "inputs": {
+                    "target_pose": {
+                        "ref": START_TCP_FRAME_ID,
+                        "offset": [0.0, 0.0, 0.0],
+                        "orientation_policy": "keep_current",
+                    }
+                },
+            },
         ],
         "verification_policy": {
             "collision_check": True,
@@ -501,6 +741,18 @@ def save_ir_model(ir: GenericCobotIR, path: Path) -> str:
     path.write_text(json.dumps(ir.model_dump(mode="json"), indent=2, ensure_ascii=False), encoding="utf-8")
     print_info(f"Saved GenericCobotIR JSON: {path}")
     return str(path)
+
+
+def world_models_equal(left: WorldModel, right: WorldModel) -> bool:
+    return left.model_dump(mode="json") == right.model_dump(mode="json")
+
+
+def save_temp_world_model(world: WorldModel, prefix: str) -> str:
+    temp_dir = Path(tempfile.gettempdir())
+    temp_path = temp_dir / f"cobot_pipeline_{prefix}_{uuid.uuid4().hex[:8]}.world.json"
+    temp_path.write_text(json.dumps(world.model_dump(mode="json"), indent=2, ensure_ascii=False), encoding="utf-8")
+    print_info(f"Prepared temporary WorldModel JSON: {temp_path}")
+    return str(temp_path)
 
 
 def print_world_binding_summary(ir: GenericCobotIR) -> None:
@@ -569,6 +821,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    temp_world_path: str | None = None
     if args.existing_world and args.world_from_pybullet:
         print_error("Use either --existing-world or --world-from-pybullet, not both")
         return 2
@@ -605,14 +858,34 @@ def main(argv: list[str] | None = None) -> int:
         using_existing_world = args.world_from_pybullet or args.existing_world is not None
         if using_existing_world:
             print_info("Using existing world data; skipping default world generation")
-            world_model = ensure_world_features_and_frames(base_world, desired_target=desired_target)
+            source_object_id = resolve_source_object_alias(base_world, nl_text)
+            target_object_id, _ = resolve_target_feature_binding(base_world, nl_text, source_object_id)
+            world_model = ensure_world_features_and_frames(
+                base_world,
+                source_object_id=source_object_id,
+                target_object_id=target_object_id,
+                desired_target=desired_target,
+            )
         else:
             world_model = base_world
 
         ir_data = build_ir_from_world(nl_text, world_model)
         ir_model = validate_ir_dict(ir_data)
 
-        world_path = save_world_model(world_model, world_sample_path(prefix))
+        world_path: str | None = None
+        if args.existing_world:
+            if world_models_equal(base_world, world_model):
+                world_path = str(Path(args.existing_world))
+                print_info(f"Reusing existing world file without writing a derived copy: {world_path}")
+            elif args.no_run:
+                world_path = save_world_model(world_model, world_sample_path(prefix))
+                print_info("Saved derived world because generated IR depends on world adjustments")
+            else:
+                temp_world_path = save_temp_world_model(world_model, prefix)
+                world_path = temp_world_path
+                print_info("Using a temporary derived world for this run; no sample world file will be created")
+        else:
+            world_path = save_world_model(world_model, world_sample_path(prefix))
         ir_path = save_ir_model(ir_model, ir_sample_path(prefix))
 
         print_info(
@@ -639,6 +912,12 @@ def main(argv: list[str] | None = None) -> int:
         except subprocess.CalledProcessError as error:
             print_error(f"run_demo.py exited with status {error.returncode}")
             return error.returncode or 1
+        finally:
+            if temp_world_path is not None:
+                try:
+                    Path(temp_world_path).unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    print_warn(f"failed to remove temporary world file '{temp_world_path}': {cleanup_error}")
 
     return 0
 
